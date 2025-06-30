@@ -15,7 +15,7 @@ const subtitleUtils = require('./subtitleUtils');
 ffmpeg.setFfmpegPath(ffmpegStatic);
 
 // Configure upload directories
-const UPLOADS_BASE_DIR = 'Z:\\Video\\VHS\\바이오맨\\1080P';
+const UPLOADS_BASE_DIR = 'Z:\\Video\\Animation\\드래곤볼_Kai';
 const VIDEOS_DIR = UPLOADS_BASE_DIR;
 const THUMBNAILS_DIR = path.join(UPLOADS_BASE_DIR, 'thumbnails');
 
@@ -174,17 +174,48 @@ const loadExistingVideos = async () => {
         // Find subtitle files for this video
         const subtitles = await subtitleUtils.findSubtitleFiles(videoPath, videosDir);
         
+        // Check if video needs conversion for browser compatibility
+        let actualVideoFile = videoFile;
+        let actualVideoUrl = `/uploads/${videoFile}`;
+        
+        if (path.extname(videoFile).toLowerCase() === '.avi') {
+          const shouldConvert = await needsConversion(videoPath);
+          if (shouldConvert) {
+            const convertedFileName = path.parse(videoFile).name + '_converted.mp4';
+            const convertedPath = path.join(videosDir, convertedFileName);
+            
+            if (!(await fs.pathExists(convertedPath))) {
+              console.log(`Converting ${videoFile} for browser compatibility...`);
+              try {
+                await convertVideoToBrowserCompatible(videoPath, convertedPath);
+                actualVideoFile = convertedFileName;
+                actualVideoUrl = `/uploads/${convertedFileName}`;
+                console.log(`✅ Successfully converted ${videoFile} to ${convertedFileName}`);
+              } catch (error) {
+                console.error(`❌ Failed to convert ${videoFile}:`, error);
+                // Keep original file if conversion fails
+              }
+            } else {
+              // Converted file already exists, use it
+              actualVideoFile = convertedFileName;
+              actualVideoUrl = `/uploads/${convertedFileName}`;
+              console.log(`📁 Using existing converted file: ${convertedFileName}`);
+            }
+          }
+        }
+        
         const video = {
           id: fileNameWithoutExt,
           title: title || 'Untitled Video',
           description: '',
-          filename: videoFile,
+          filename: actualVideoFile,
           thumbnail: thumbnailExists ? possibleThumbnailName : 'default.svg',
           uploadDate: stats.birthtime.toISOString(),
           views: 0,
-          videoUrl: `/uploads/${videoFile}`,
+          videoUrl: actualVideoUrl,
           thumbnailUrl: thumbnailExists ? `/uploads/thumbnails/${possibleThumbnailName}` : '/uploads/thumbnails/default.svg',
-          subtitles: subtitles
+          subtitles: subtitles,
+          originalFile: videoFile !== actualVideoFile ? videoFile : undefined
         };
         
         videos.push(video);
@@ -284,6 +315,70 @@ const generateThumbnail = (videoPath, thumbnailPath) => {
       })
       .on('end', resolve)
       .on('error', reject);
+  });
+};
+
+// Convert video to browser-compatible format
+const convertVideoToBrowserCompatible = (inputPath, outputPath) => {
+  return new Promise((resolve, reject) => {
+    console.log(`Converting video: ${inputPath} -> ${outputPath}`);
+    
+    ffmpeg(inputPath)
+      .videoCodec('libx264')
+      .audioCodec('aac')
+      .format('mp4')
+      .outputOptions([
+        '-preset fast',
+        '-crf 23',
+        '-movflags +faststart'
+      ])
+      .on('start', (commandLine) => {
+        console.log('FFmpeg command:', commandLine);
+      })
+      .on('progress', (progress) => {
+        console.log(`Conversion progress: ${Math.round(progress.percent)}%`);
+      })
+      .on('end', () => {
+        console.log(`Video conversion completed: ${outputPath}`);
+        resolve();
+      })
+      .on('error', (err) => {
+        console.error('Video conversion error:', err);
+        reject(err);
+      })
+      .save(outputPath);
+  });
+};
+
+// Check if video needs conversion for browser compatibility
+const needsConversion = async (videoPath) => {
+  return new Promise((resolve) => {
+    ffmpeg.ffprobe(videoPath, (err, metadata) => {
+      if (err) {
+        console.error('Error probing video:', err);
+        resolve(false);
+        return;
+      }
+      
+      const videoStream = metadata.streams.find(stream => stream.codec_type === 'video');
+      const audioStream = metadata.streams.find(stream => stream.codec_type === 'audio');
+      
+      // Check for problematic codecs
+      const problemCodecs = [
+        'xvid', 'divx', 'wmv3', 'vc1', 'theora', 'vp6f'
+      ];
+      const problemAudioCodecs = [
+        'ac3', 'dts', 'pcm_s16le', 'mp2'
+      ];
+      
+      const needsVideoConversion = videoStream && problemCodecs.includes(videoStream.codec_name?.toLowerCase());
+      const needsAudioConversion = audioStream && problemAudioCodecs.includes(audioStream.codec_name?.toLowerCase());
+      
+      console.log(`Video codec: ${videoStream?.codec_name}, Audio codec: ${audioStream?.codec_name}`);
+      console.log(`Needs conversion: ${needsVideoConversion || needsAudioConversion}`);
+      
+      resolve(needsVideoConversion || needsAudioConversion);
+    });
   });
 };
 
@@ -535,6 +630,14 @@ app.delete('/api/videos/:id', authenticateToken, requireAdmin, async (req, res) 
       await fs.unlink(videoPath);
     }
     
+    // Delete original file if different from converted file
+    if (video.originalFile && video.originalFile !== video.filename) {
+      const originalPath = path.join(VIDEOS_DIR, video.originalFile);
+      if (await fs.pathExists(originalPath)) {
+        await fs.unlink(originalPath);
+      }
+    }
+    
     // Delete thumbnail file
     if (video.thumbnail !== 'default.svg') {
       const thumbnailPath = path.join(THUMBNAILS_DIR, video.thumbnail);
@@ -550,6 +653,55 @@ app.delete('/api/videos/:id', authenticateToken, requireAdmin, async (req, res) 
   } catch (error) {
     console.error('Delete error:', error);
     res.status(500).json({ error: 'Failed to delete video' });
+  }
+});
+
+// Convert video endpoint
+app.post('/api/videos/:id/convert', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const videoId = req.params.id;
+    const video = videos.find(v => v.id === videoId);
+    
+    if (!video) {
+      return res.status(404).json({ error: 'Video not found' });
+    }
+    
+    const originalPath = path.join(VIDEOS_DIR, video.originalFile || video.filename);
+    const convertedFileName = path.parse(video.filename).name + '_converted.mp4';
+    const convertedPath = path.join(VIDEOS_DIR, convertedFileName);
+    
+    // Check if already converted
+    if (await fs.pathExists(convertedPath)) {
+      return res.json({ message: 'Video already converted', filename: convertedFileName });
+    }
+    
+    // Start conversion
+    console.log(`Manual conversion requested for: ${video.title}`);
+    
+    try {
+      await convertVideoToBrowserCompatible(originalPath, convertedPath);
+      
+      // Update video metadata
+      const videoIndex = videos.findIndex(v => v.id === videoId);
+      if (videoIndex !== -1) {
+        videos[videoIndex].filename = convertedFileName;
+        videos[videoIndex].videoUrl = `/uploads/${convertedFileName}`;
+        videos[videoIndex].originalFile = video.originalFile || video.filename;
+      }
+      
+      res.json({ 
+        message: 'Video converted successfully',
+        filename: convertedFileName,
+        originalFile: video.originalFile || video.filename
+      });
+    } catch (error) {
+      console.error('Conversion failed:', error);
+      res.status(500).json({ error: 'Video conversion failed: ' + error.message });
+    }
+    
+  } catch (error) {
+    console.error('Convert endpoint error:', error);
+    res.status(500).json({ error: 'Conversion request failed' });
   }
 });
 

@@ -32,31 +32,75 @@ const convertSmiToVtt = (smiContent) => {
       const nextMatch = matches[i + 1];
       
       // Extract content between current and next SYNC tag
-      const endIndex = nextMatch ? nextMatch.index - nextMatch.time.toString().length - 20 : smiContent.length;
-      const content = smiContent.substring(currentMatch.index, endIndex);
+      let endIndex;
+      if (nextMatch) {
+        // Find the actual start of the next SYNC tag
+        const nextSyncStart = smiContent.indexOf('<SYNC', currentMatch.index + 1);
+        endIndex = nextSyncStart !== -1 ? nextSyncStart : smiContent.length;
+      } else {
+        endIndex = smiContent.length;
+      }
       
-      // Try multiple patterns to extract text from P tags
-      let pTagMatch = content.match(/<P[^>]*?Class\s*=\s*[^>]*?>(.*?)(?:<\/P>|<SYNC)/is);
+      const content = smiContent.substring(currentMatch.index, endIndex);
+      console.log(`Processing SYNC block ${i + 1}, content length: ${content.length}`);
+      
+      // Try multiple patterns to extract text from P tags - be more greedy
+      let pTagMatch = content.match(/<P[^>]*?Class\s*=\s*[^>]*?>(.*?)(?:<\/P>|<SYNC|$)/is);
       if (!pTagMatch) {
         // Try simpler pattern
-        pTagMatch = content.match(/<P[^>]*?>(.*?)(?:<\/P>|<SYNC)/is);
+        pTagMatch = content.match(/<P[^>]*?>(.*?)(?:<\/P>|<SYNC|$)/is);
       }
       if (!pTagMatch) {
-        // Try even simpler pattern
-        pTagMatch = content.match(/<P.*?>(.*?)(?:<\/P>|$)/is);
+        // Try even simpler pattern - just look for P tag and grab everything until next tag or end
+        pTagMatch = content.match(/<P[^>]*?>(.*?)(?:<[^>]*>|$)/is);
+      }
+      if (!pTagMatch) {
+        // Last resort - grab everything after P tag
+        const pIndex = content.search(/<P[^>]*?>/i);
+        if (pIndex !== -1) {
+          const afterP = content.substring(pIndex);
+          const pEndIndex = afterP.search(/<P[^>]*?>/i);
+          const textStart = afterP.indexOf('>') + 1;
+          const textContent = pEndIndex !== -1 ? 
+            afterP.substring(textStart, pEndIndex) : 
+            afterP.substring(textStart);
+          pTagMatch = [null, textContent];
+        }
       }
       
       if (pTagMatch) {
         let text = pTagMatch[1];
+        console.log(`Raw extracted text: "${text.substring(0, 100)}..."`);
+        console.log(`Raw text contains &:`, text.includes('&'));
+        console.log(`Raw text contains <br>:`, text.includes('<br>'));
+        console.log(`Raw text character codes:`, text.split('').slice(0, 50).map(c => `${c}(${c.charCodeAt(0)})`).join(' '));
         
-        // Clean up the text
-        text = text.replace(/<[^>]*>/g, ''); // Remove HTML tags
+        // Clean up the text - handle HTML tags and entities first
+        text = text.replace(/<br\s*\/?>/gi, '\n'); // Replace <br> tags with line breaks FIRST
+        text = text.replace(/<[^>]*>/g, ''); // Remove other HTML tags
         text = he.decode(text); // Decode HTML entities
-        text = text.replace(/&nbsp;/g, ' '); // Replace &nbsp;
-        text = text.replace(/&/g, '\n'); // Replace & with line breaks for WebVTT format
-        text = text.replace(/\s*\n\s*/g, '\n'); // Clean up line breaks
-        text = text.replace(/\n+/g, '\n'); // Remove multiple consecutive line breaks
+        text = text.replace(/&nbsp;/g, ' '); // Replace &nbsp; with space
+        
+        // Handle specific SMI line break patterns - be more careful with &
+        // Common SMI patterns: &#13;&#10; (CRLF), &#10; (LF), &#13; (CR)
+        text = text.replace(/&#13;&#10;/g, '\n'); // CRLF
+        text = text.replace(/&#10;/g, '\n'); // LF
+        text = text.replace(/&#13;/g, '\n'); // CR
+        
+        // Only replace standalone & if it's clearly meant as a line break
+        text = text.replace(/&\s*$/gm, '\n'); // & at end of line
+        text = text.replace(/&\s{2,}/g, '\n'); // & followed by multiple spaces
+        text = text.replace(/\r\n/g, '\n'); // Normalize Windows line breaks
+        text = text.replace(/\r/g, '\n'); // Normalize old Mac line breaks
+        
+        // Clean up whitespace around line breaks but preserve the breaks
+        text = text.replace(/[ \t]*\n[ \t]*/g, '\n'); // Remove spaces around line breaks
+        text = text.replace(/\n{3,}/g, '\n\n'); // Limit to max 2 consecutive line breaks
         text = text.trim();
+        
+        console.log(`Cleaned text: "${text}"`);
+        console.log(`Text contains newlines:`, text.includes('\n'));
+        console.log(`Number of newlines:`, (text.match(/\n/g) || []).length);
         
         // Skip empty or meaningless text
         if (text && text !== '&nbsp;' && text.length > 0 && !text.match(/^[\s\u00A0]*$/)) {
@@ -68,8 +112,11 @@ const convertSmiToVtt = (smiContent) => {
           vttContent += `${text}\n\n`;
           sequenceNumber++;
           
-          console.log(`Added subtitle ${sequenceNumber-1}: "${text.substring(0, 50)}..."`);
+          console.log(`Added subtitle ${sequenceNumber-1}: "${text}"`);
+          console.log(`VTT entry preview: "${startTime} --> ${endTime}\\n${text}"`);
         }
+      } else {
+        console.log(`No P tag match found in content: "${content.substring(0, 200)}..."`);
       }
     }
     
