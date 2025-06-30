@@ -1,0 +1,30 @@
+<SAMI>
+<HEAD>
+<TITLE>Test Subtitle</TITLE>
+<STYLE TYPE="text/css">
+<!--
+P { margin-left:2pt; margin-right:2pt; margin-bottom:1pt;
+    margin-top:2pt; font-size:14pt; text-align:center;
+    font-family:굴림, Arial; font-weight:normal; color:white;
+    background-color:black; }
+.KRCC { Name:한국어; lang:ko-KR; SAMIType:CC; }
+-->
+</STYLE>
+</HEAD>
+<BODY>
+
+<SYNC Start=1000><P Class=KRCC>
+<font color=FF0000>빨간색 텍스트</font>
+</P>
+
+<SYNC Start=3000><P Class=KRCC>
+<font color="yellow">노란색 텍스트</font><br>
+<font color="#00FF00">초록색 텍스트</font>
+</P>
+
+<SYNC Start=6000><P Class=KRCC>
+일반 텍스트
+</P>
+
+</BODY>
+</SAMI>
