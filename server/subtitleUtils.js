@@ -8,9 +8,91 @@ const convertSmiToVtt = (smiContent) => {
   try {
     console.log('Converting SMI to VTT, content length:', smiContent.length);
     
+    // Helper function to extract and normalize color from font tags
+    const extractFontColor = (text) => {
+      const fontColorRegex = /<font[^>]*color\s*=\s*["']?([^"'\s>]+)["']?[^>]*>/gi;
+      const colors = [];
+      const matches = text.matchAll(fontColorRegex);
+      
+      for (const match of matches) {
+        let color = match[1].toLowerCase().trim();
+        
+        // Normalize color format
+        if (color.startsWith('#')) {
+          // Already hex format
+          if (color.length === 4) {
+            // Convert #RGB to #RRGGBB
+            color = '#' + color[1] + color[1] + color[2] + color[2] + color[3] + color[3];
+          }
+        } else if (color.match(/^[a-f0-9]{6}$/i)) {
+          // Hex without #
+          color = '#' + color;
+        } else if (color.match(/^[a-f0-9]{3}$/i)) {
+          // Short hex without #
+          const r = color[0];
+          const g = color[1];
+          const b = color[2];
+          color = '#' + r + r + g + g + b + b;
+        }
+        // Keep named colors as-is (red, blue, etc.)
+        
+        colors.push(color);
+      }
+      
+      return colors;
+    };
+    
+    // Helper function to get CSS class name for a color
+    const getColorClassName = (color, colorStyles) => {
+      if (!colorStyles.has(color)) {
+        const className = `color${colorStyles.size + 1}`;
+        colorStyles.set(color, className);
+      }
+      return colorStyles.get(color);
+    };
+    
+    // Helper function to process text with font color tags
+    const processTextWithColors = (text, colorStyles) => {
+      let processedText = text;
+      
+      // Find all font color tags and their content
+      const fontRegex = /<font[^>]*color\s*=\s*["']?([^"'\s>]+)["']?[^>]*>(.*?)<\/font>/gi;
+      const matches = Array.from(text.matchAll(fontRegex));
+      
+      // Process matches in reverse order to avoid index issues
+      for (let i = matches.length - 1; i >= 0; i--) {
+        const match = matches[i];
+        const color = match[1].toLowerCase().trim();
+        let normalizedColor = color;
+        
+        // Normalize color format (same logic as above)
+        if (normalizedColor.startsWith('#')) {
+          if (normalizedColor.length === 4) {
+            normalizedColor = '#' + normalizedColor[1] + normalizedColor[1] + normalizedColor[2] + normalizedColor[2] + normalizedColor[3] + normalizedColor[3];
+          }
+        } else if (normalizedColor.match(/^[a-f0-9]{6}$/i)) {
+          normalizedColor = '#' + normalizedColor;
+        } else if (normalizedColor.match(/^[a-f0-9]{3}$/i)) {
+          const r = normalizedColor[0];
+          const g = normalizedColor[1];
+          const b = normalizedColor[2];
+          normalizedColor = '#' + r + r + g + g + b + b;
+        }
+        
+        const className = getColorClassName(normalizedColor, colorStyles);
+        const fontContent = match[2];
+        
+        // Replace the font tag with WebVTT color markup
+        processedText = processedText.replace(match[0], `<c.${className}>${fontContent}</c>`);
+      }
+      
+      return processedText;
+    };
+    
     // Parse SMI content
     let vttContent = 'WEBVTT\n\n';
     let sequenceNumber = 1;
+    let colorStyles = new Map(); // Track unique colors and their CSS classes
     
     // Extract all SYNC tags with their content
     const syncPattern = /<SYNC\s+Start\s*=\s*(\d+)[^>]*>/gi;
@@ -75,9 +157,13 @@ const convertSmiToVtt = (smiContent) => {
         console.log(`Raw text contains <br>:`, text.includes('<br>'));
         console.log(`Raw text character codes:`, text.split('').slice(0, 50).map(c => `${c}(${c.charCodeAt(0)})`).join(' '));
         
-        // Clean up the text - handle HTML tags and entities first
+        // Process font color tags BEFORE cleaning HTML tags
+        text = processTextWithColors(text, colorStyles);
+        console.log(`Text after color processing: "${text}"`);
+        
+        // Clean up the text - handle HTML tags and entities
         text = text.replace(/<br\s*\/?>/gi, '\n'); // Replace <br> tags with line breaks FIRST
-        text = text.replace(/<[^>]*>/g, ''); // Remove other HTML tags
+        text = text.replace(/<(?!\/?(c\.|\/c))[^>]*>/g, ''); // Remove HTML tags except WebVTT color tags
         text = he.decode(text); // Decode HTML entities
         text = text.replace(/&nbsp;/g, ' '); // Replace &nbsp; with space
         
@@ -121,7 +207,19 @@ const convertSmiToVtt = (smiContent) => {
     }
     
     console.log('Generated', sequenceNumber - 1, 'subtitle entries');
-    return vttContent;
+    console.log('Color styles found:', colorStyles);
+    
+    // Generate CSS for the colors
+    let cssStyles = '';
+    for (const [color, className] of colorStyles) {
+      cssStyles += `video::cue(.${className}) { color: ${color}; }\n`;
+    }
+    
+    return {
+      vtt: vttContent,
+      css: cssStyles,
+      colors: Object.fromEntries(colorStyles)
+    };
   } catch (error) {
     console.error('Error converting SMI to VTT:', error);
     return null;
@@ -335,11 +433,28 @@ const convertSubtitleToVtt = async (subtitlePath) => {
     switch (extension) {
       case '.smi':
       case '.sami':
-        return convertSmiToVtt(content);
+        const smiResult = convertSmiToVtt(content);
+        if (smiResult && typeof smiResult === 'object') {
+          return {
+            vtt: smiResult.vtt,
+            css: smiResult.css,
+            colors: smiResult.colors
+          };
+        }
+        return smiResult;
       case '.srt':
-        return convertSrtToVtt(content);
+        const srtVtt = convertSrtToVtt(content);
+        return {
+          vtt: srtVtt,
+          css: '',
+          colors: {}
+        };
       case '.vtt':
-        return content; // Already in VTT format
+        return {
+          vtt: content,
+          css: '',
+          colors: {}
+        }; // Already in VTT format
       default:
         console.warn(`Unsupported subtitle format: ${extension}`);
         return null;

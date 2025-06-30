@@ -495,13 +495,44 @@ app.get('/api/subtitles/:filename', async (req, res) => {
     console.log('First 200 chars:', originalContent.substring(0, 200));
     
     // Convert subtitle to WebVTT format
-    const vttContent = await subtitleUtils.convertSubtitleToVtt(subtitlePath);
-      console.log('Converted VTT size:', vttContent ? vttContent.length : 0);
+    const conversionResult = await subtitleUtils.convertSubtitleToVtt(subtitlePath);
+    console.log('Conversion result type:', typeof conversionResult);
+    console.log('Conversion result keys:', conversionResult ? Object.keys(conversionResult) : 'null');
+    
+    let vttContent, cssStyles;
+    if (conversionResult && typeof conversionResult === 'object' && conversionResult.vtt) {
+      vttContent = conversionResult.vtt;
+      cssStyles = conversionResult.css || '';
+      console.log('CSS styles found:', cssStyles);
+    } else if (typeof conversionResult === 'string') {
+      // Legacy format - just VTT content
+      vttContent = conversionResult;
+      cssStyles = '';
+    } else {
+      vttContent = conversionResult;
+      cssStyles = '';
+    }
+    
+    console.log('Converted VTT size:', vttContent ? vttContent.length : 0);
     console.log('VTT preview:', vttContent ? vttContent.substring(0, 200) : 'null');
     
     if (!vttContent) {
       console.log('Failed to convert subtitle file');
       return res.status(500).json({ error: 'Failed to convert subtitle file' });
+    }
+
+    // Inject CSS styles into VTT content if they exist
+    let finalVttContent = vttContent;
+    if (cssStyles && cssStyles.trim()) {
+      console.log('Injecting CSS styles into VTT content');
+      // Insert CSS after the WEBVTT header
+      const lines = vttContent.split('\n');
+      const webvttIndex = lines.findIndex(line => line.trim() === 'WEBVTT');
+      if (webvttIndex !== -1) {
+        lines.splice(webvttIndex + 1, 0, '', 'STYLE', cssStyles, '');
+        finalVttContent = lines.join('\n');
+        console.log('Final VTT with CSS preview:', finalVttContent.substring(0, 400));
+      }
     }
 
     // Check if this is a Range request
@@ -511,14 +542,14 @@ app.get('/api/subtitles/:filename', async (req, res) => {
       // Parse range
       const parts = range.replace(/bytes=/, "").split("-");
       const start = parseInt(parts[0], 10);
-      const end = parts[1] ? parseInt(parts[1], 10) : vttContent.length - 1;
+      const end = parts[1] ? parseInt(parts[1], 10) : finalVttContent.length - 1;
       const chunksize = (end - start) + 1;
-      const chunk = vttContent.slice(start, end + 1);
+      const chunk = finalVttContent.slice(start, end + 1);
       
       console.log('Range response - start:', start, 'end:', end, 'chunk size:', chunksize);
       
       res.status(206);
-      res.setHeader('Content-Range', `bytes ${start}-${end}/${vttContent.length}`);
+      res.setHeader('Content-Range', `bytes ${start}-${end}/${finalVttContent.length}`);
       res.setHeader('Content-Length', chunksize);
       res.setHeader('Content-Type', 'text/vtt; charset=utf-8');
       res.setHeader('Accept-Ranges', 'bytes');
@@ -529,7 +560,7 @@ app.get('/api/subtitles/:filename', async (req, res) => {
 
     // Set Chrome-compatible headers for subtitle tracks
     res.setHeader('Content-Type', 'text/vtt; charset=utf-8');
-    res.setHeader('Content-Length', Buffer.byteLength(vttContent, 'utf8'));
+    res.setHeader('Content-Length', Buffer.byteLength(finalVttContent, 'utf8'));
     
     // Use different caching strategy for browsers vs other clients
     if (isBrowser) {
@@ -548,11 +579,11 @@ app.get('/api/subtitles/:filename', async (req, res) => {
     res.setHeader('Accept-Ranges', 'bytes');
     res.setHeader('X-Content-Type-Options', 'nosniff');
     
-    console.log('Sending full response - size:', vttContent.length, 'bytes, buffer size:', Buffer.byteLength(vttContent, 'utf8'));
+    console.log('Sending full response - size:', finalVttContent.length, 'bytes, buffer size:', Buffer.byteLength(finalVttContent, 'utf8'));
     console.log('Response headers being sent:', Object.fromEntries(Object.entries(res.getHeaders())));
     
     // Send as buffer to ensure proper encoding
-    res.end(Buffer.from(vttContent, 'utf8'));
+    res.end(Buffer.from(finalVttContent, 'utf8'));
   } catch (error) {
     console.error('Error serving subtitle:', error);
     res.status(500).json({ error: 'Internal server error' });
