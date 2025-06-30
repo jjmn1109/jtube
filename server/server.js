@@ -14,13 +14,26 @@ const subtitleUtils = require('./subtitleUtils');
 // Set the path to ffmpeg
 ffmpeg.setFfmpegPath(ffmpegStatic);
 
+// Set explicit FFmpeg paths for Windows installation
+const os = require('os');
+const ffmpegBinPath = path.join(os.homedir(), 'AppData', 'Local', 'Microsoft', 'WinGet', 'Packages', 'Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe', 'ffmpeg-7.1.1-full_build', 'bin');
+
+// Check if winget FFmpeg installation exists, otherwise use ffmpeg-static
+if (require('fs').existsSync(path.join(ffmpegBinPath, 'ffmpeg.exe'))) {
+  ffmpeg.setFfmpegPath(path.join(ffmpegBinPath, 'ffmpeg.exe'));
+  ffmpeg.setFfprobePath(path.join(ffmpegBinPath, 'ffprobe.exe'));
+  console.log('Using system FFmpeg installation:', ffmpegBinPath);
+} else {
+  console.log('Using bundled FFmpeg from ffmpeg-static');
+}
+
 // Configure upload directories
-const UPLOADS_BASE_DIR = 'Z:\\Video\\Animation\\드래곤볼_Kai';
+const UPLOADS_BASE_DIR = 'Z:\\Video\\Animation\\드래곤볼_Kai';
 const VIDEOS_DIR = UPLOADS_BASE_DIR;
 const THUMBNAILS_DIR = path.join(UPLOADS_BASE_DIR, 'thumbnails');
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 3001;
 const JWT_SECRET = 'your-secret-key-change-in-production';
 
 // Pre-defined users with hashed passwords
@@ -47,8 +60,19 @@ const initializeUsers = async () => {
 };
 
 // Middleware
-app.use(cors());
+app.use(cors({
+  origin: ['http://localhost:3000', 'http://127.0.0.1:3000'],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Range']
+}));
 app.use(express.json());
+
+// Request logging middleware
+app.use((req, res, next) => {
+  console.log(`🌐 ${req.method} ${req.url} - Origin: ${req.get('Origin') || 'none'}`);
+  next();
+});
 
 // Authentication middleware
 const authenticateToken = (req, res, next) => {
@@ -174,35 +198,10 @@ const loadExistingVideos = async () => {
         // Find subtitle files for this video
         const subtitles = await subtitleUtils.findSubtitleFiles(videoPath, videosDir);
         
-        // Check if video needs conversion for browser compatibility
+        // Create video object with default values first
+        // Video conversion will be handled asynchronously
         let actualVideoFile = videoFile;
         let actualVideoUrl = `/uploads/${videoFile}`;
-        
-        if (path.extname(videoFile).toLowerCase() === '.avi') {
-          const shouldConvert = await needsConversion(videoPath);
-          if (shouldConvert) {
-            const convertedFileName = path.parse(videoFile).name + '_converted.mp4';
-            const convertedPath = path.join(videosDir, convertedFileName);
-            
-            if (!(await fs.pathExists(convertedPath))) {
-              console.log(`Converting ${videoFile} for browser compatibility...`);
-              try {
-                await convertVideoToBrowserCompatible(videoPath, convertedPath);
-                actualVideoFile = convertedFileName;
-                actualVideoUrl = `/uploads/${convertedFileName}`;
-                console.log(`✅ Successfully converted ${videoFile} to ${convertedFileName}`);
-              } catch (error) {
-                console.error(`❌ Failed to convert ${videoFile}:`, error);
-                // Keep original file if conversion fails
-              }
-            } else {
-              // Converted file already exists, use it
-              actualVideoFile = convertedFileName;
-              actualVideoUrl = `/uploads/${convertedFileName}`;
-              console.log(`📁 Using existing converted file: ${convertedFileName}`);
-            }
-          }
-        }
         
         const video = {
           id: fileNameWithoutExt,
@@ -215,14 +214,21 @@ const loadExistingVideos = async () => {
           videoUrl: actualVideoUrl,
           thumbnailUrl: thumbnailExists ? `/uploads/thumbnails/${possibleThumbnailName}` : '/uploads/thumbnails/default.svg',
           subtitles: subtitles,
-          originalFile: videoFile !== actualVideoFile ? videoFile : undefined
+          originalFile: undefined, // Will be set if conversion happens
+          processing: false // Track if video is being processed
         };
         
         videos.push(video);
+        
+        // Queue video for background processing if it's an AVI file
+        if (path.extname(videoFile).toLowerCase() === '.avi') {
+          processVideoInBackground(video, videoPath, videosDir);
+        }
       }
     }
     
-    console.log(`Loaded ${videos.length} existing videos from ${videosDir}`);
+    console.log(`📚 Loaded ${videos.length} existing videos from ${videosDir}`);
+    console.log(`🔄 Background processing will start for any videos that need conversion...`);
   } catch (error) {
     console.error('Error loading existing videos:', error);
   }
@@ -252,7 +258,7 @@ const createDefaultThumbnail = async () => {
   }
 };
 
-// Function to generate thumbnails for videos that don't have them
+// Function to generate thumbnails for videos that don't have them (background processing)
 const generateThumbnails = async () => {
   try {
     const videosDir = VIDEOS_DIR;
@@ -260,44 +266,93 @@ const generateThumbnails = async () => {
     
     await fs.ensureDir(thumbnailsDir);
     
-    for (const video of videos) {
-      const thumbnailPath = path.join(thumbnailsDir, video.thumbnail);
+    console.log(`🎬 Starting background thumbnail generation for ${videos.length} videos...`);
+    
+    // Process thumbnails in the background without blocking
+    setImmediate(async () => {
+      let processed = 0;
+      let generated = 0;
       
-      // Only generate if thumbnail doesn't exist and it's not the default
-      if (video.thumbnail !== 'default.svg' && !(await fs.pathExists(thumbnailPath))) {
-        const videoPath = path.join(videosDir, video.filename);
-        const thumbnailName = path.parse(video.filename).name + '.jpg';
-        const newThumbnailPath = path.join(thumbnailsDir, thumbnailName);
-        
+      for (const video of videos) {
         try {
-          await new Promise((resolve, reject) => {
-            ffmpeg(videoPath)
-              .screenshots({
-                timestamps: ['10%'],
-                filename: thumbnailName,
-                folder: thumbnailsDir,
-                size: '320x180'
-              })
-              .on('end', () => {
-                console.log(`Generated thumbnail for ${video.filename}`);
-                // Update video metadata
-                const videoIndex = videos.findIndex(v => v.id === video.id);
-                if (videoIndex !== -1) {
-                  videos[videoIndex].thumbnail = thumbnailName;
-                  videos[videoIndex].thumbnailUrl = `/uploads/thumbnails/${thumbnailName}`;
-                }
-                resolve();
-              })
-              .on('error', (err) => {
-                console.error(`Error generating thumbnail for ${video.filename}:`, err);
-                reject(err);
+          // Generate thumbnail if:
+          // 1. Video is using default.svg (no custom thumbnail)
+          // 2. Video has a custom thumbnail name but the file doesn't exist
+          const needsThumbnail = video.thumbnail === 'default.svg' || 
+                                (video.thumbnail !== 'default.svg' && !(await fs.pathExists(path.join(thumbnailsDir, video.thumbnail))));
+          
+          if (needsThumbnail) {
+            const videoPath = path.join(videosDir, video.filename);
+            const thumbnailName = path.parse(video.filename).name + '.jpg';
+            const newThumbnailPath = path.join(thumbnailsDir, thumbnailName);
+            
+            // Check if video file exists
+            if (!(await fs.pathExists(videoPath))) {
+              console.log(`⚠️ Video file not found for thumbnail generation: ${video.filename}`);
+              processed++;
+              continue;
+            }
+            
+            // Check if we're going to overwrite an existing thumbnail
+            if (await fs.pathExists(newThumbnailPath)) {
+              console.log(`📸 Thumbnail already exists for ${video.filename}, updating metadata...`);
+              // Update video metadata to use existing thumbnail
+              const videoIndex = videos.findIndex(v => v.id === video.id);
+              if (videoIndex !== -1) {
+                videos[videoIndex].thumbnail = thumbnailName;
+                videos[videoIndex].thumbnailUrl = `/uploads/thumbnails/${thumbnailName}`;
+              }
+              processed++;
+              generated++;
+              continue;
+            }
+            
+            try {
+              console.log(`🎬 [${processed + 1}/${videos.length}] Generating thumbnail for ${video.filename}...`);
+              await new Promise((resolve, reject) => {
+                ffmpeg(videoPath)
+                  .screenshots({
+                    timestamps: ['10%'],
+                    filename: thumbnailName,
+                    folder: thumbnailsDir,
+                    size: '320x180'
+                  })
+                  .on('end', () => {
+                    console.log(`✅ Generated thumbnail for ${video.filename}`);
+                    // Update video metadata
+                    const videoIndex = videos.findIndex(v => v.id === video.id);
+                    if (videoIndex !== -1) {
+                      videos[videoIndex].thumbnail = thumbnailName;
+                      videos[videoIndex].thumbnailUrl = `/uploads/thumbnails/${thumbnailName}`;
+                    }
+                    generated++;
+                    resolve();
+                  })
+                  .on('error', (err) => {
+                    console.error(`❌ Error generating thumbnail for ${video.filename}:`, err.message);
+                    reject(err);
+                  });
               });
-          });
+            } catch (error) {
+              console.error(`❌ Failed to generate thumbnail for ${video.filename}:`, error.message);
+              console.log(`📝 Video will continue to use default thumbnail`);
+            }
+          }
+          
+          processed++;
+          
+          // Add a small delay between operations to prevent system overload
+          await new Promise(resolve => setTimeout(resolve, 100));
+          
         } catch (error) {
-          console.error(`Failed to generate thumbnail for ${video.filename}:`, error);
+          console.error(`❌ Error processing video ${video.filename}:`, error);
+          processed++;
         }
       }
-    }
+      
+      console.log(`🖼️ Background thumbnail generation complete. ${generated}/${videos.length} videos have custom thumbnails.`);
+    });
+    
   } catch (error) {
     console.error('Error in generateThumbnails:', error);
   }
@@ -713,8 +768,7 @@ app.post('/api/videos/:id/convert', authenticateToken, requireAdmin, async (req,
       await convertVideoToBrowserCompatible(originalPath, convertedPath);
       
       // Update video metadata
-      const videoIndex = videos.findIndex(v => v.id === videoId);
-      if (videoIndex !== -1) {
+      const videoIndex = videos.findIndex(v => v.id === videoId);              if (videoIndex !== -1) {
         videos[videoIndex].filename = convertedFileName;
         videos[videoIndex].videoUrl = `/uploads/${convertedFileName}`;
         videos[videoIndex].originalFile = video.originalFile || video.filename;
@@ -736,12 +790,97 @@ app.post('/api/videos/:id/convert', authenticateToken, requireAdmin, async (req,
   }
 });
 
+// Function to convert videos that need browser compatibility (background processing)
+const convertVideosInBackground = async () => {
+  try {
+    console.log('🔄 Checking videos for browser compatibility...');
+    
+    // Process videos in the background without blocking
+    setImmediate(async () => {
+      let processed = 0;
+      let converted = 0;
+      
+      for (const video of videos) {
+        try {
+          const videoPath = path.join(VIDEOS_DIR, video.originalFile || video.filename);
+          
+          // Check if video file exists
+          if (!(await fs.pathExists(videoPath))) {
+            console.log(`⚠️ Video file not found: ${video.filename}`);
+            processed++;
+            continue;
+          }
+          
+          // Check if video needs conversion
+          const needsConversion = await needsConversion(videoPath);
+          
+          if (needsConversion && !video.originalFile) {
+            const convertedFileName = path.parse(video.filename).name + '_converted.mp4';
+            const convertedPath = path.join(VIDEOS_DIR, convertedFileName);
+            
+            // Skip if already converted
+            if (await fs.pathExists(convertedPath)) {
+              console.log(`📹 Converted version already exists for ${video.filename}, updating metadata...`);
+              // Update video metadata
+              const videoIndex = videos.findIndex(v => v.id === video.id);
+              if (videoIndex !== -1) {
+                videos[videoIndex].filename = convertedFileName;
+                videos[videoIndex].videoUrl = `/uploads/${convertedFileName}`;
+                videos[videoIndex].originalFile = video.filename;
+              }
+              processed++;
+              converted++;
+              continue;
+            }
+            
+            try {
+              console.log(`🔄 [${processed + 1}/${videos.length}] Converting ${video.filename} for browser compatibility...`);
+              await convertVideoToBrowserCompatible(videoPath, convertedPath);
+              
+              // Update video metadata
+              const videoIndex = videos.findIndex(v => v.id === video.id);
+              if (videoIndex !== -1) {
+                videos[videoIndex].filename = convertedFileName;
+                videos[videoIndex].videoUrl = `/uploads/${convertedFileName}`;
+                videos[videoIndex].originalFile = video.filename;
+              }
+              
+              console.log(`✅ Successfully converted ${video.filename} to ${convertedFileName}`);
+              converted++;
+            } catch (error) {
+              console.error(`❌ Failed to convert ${video.filename}:`, error.message);
+            }
+          }
+          
+          processed++;
+          
+          // Add a small delay between operations to prevent system overload
+          await new Promise(resolve => setTimeout(resolve, 200));
+          
+        } catch (error) {
+          console.error(`❌ Error processing video ${video.filename}:`, error);
+          processed++;
+        }
+      }
+      
+      if (converted > 0) {
+        console.log(`🎬 Background video conversion complete. Converted ${converted} videos for browser compatibility.`);
+      } else {
+        console.log(`📹 All videos are already browser compatible.`);
+      }
+    });
+    
+  } catch (error) {
+    console.error('Error in convertVideosInBackground:', error);
+  }
+};
+
 // Initialize server
 const initializeServer = async () => {
   try {
-    console.log('Initializing server...');
-    console.log(`Using videos directory: ${VIDEOS_DIR}`);
-    console.log(`Using thumbnails directory: ${THUMBNAILS_DIR}`);
+    console.log('🚀 Initializing JTube server...');
+    console.log(`📂 Videos directory: ${VIDEOS_DIR}`);
+    console.log(`🖼️ Thumbnails directory: ${THUMBNAILS_DIR}`);
     
     // Initialize users with hashed passwords
     await initializeUsers();
@@ -753,24 +892,38 @@ const initializeServer = async () => {
     // Create default thumbnail
     await createDefaultThumbnail();
     
-    // Load existing videos
+    // Load existing videos (this needs to complete before server starts)
     await loadExistingVideos();
     
-    // Generate missing thumbnails
-    await generateThumbnails();
-    
-    console.log('Server initialization complete');
+    console.log('✅ Server initialization complete - ready to start server');
   } catch (error) {
-    console.error('Error initializing server:', error);
+    console.error('❌ Error initializing server:', error);
+    throw error;
   }
+};
+
+// Background tasks to run after server starts
+const runBackgroundTasks = () => {
+  console.log('🔄 Starting background tasks...');
+  
+  // Run thumbnail generation in background
+  generateThumbnails();
+  
+  // Run video conversion in background
+  convertVideosInBackground();
 };
 
 // Start server
 const startServer = () => {
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server running on http://0.0.0.0:${PORT}`);
-    console.log(`Local access: http://localhost:${PORT}`);
-    console.log(`Network access: http://YOUR_IP:${PORT}`);
+    console.log('');
+    console.log('🌟 JTube Server is now running!');
+    console.log(`🏠 Local access: http://localhost:${PORT}`);
+    console.log(`🌐 Network access: http://YOUR_IP:${PORT}`);
+    console.log('');
+    
+    // Start background tasks after server is running
+    runBackgroundTasks();
   });
 };
 
@@ -778,6 +931,6 @@ const startServer = () => {
 initializeServer().then(() => {
   startServer();
 }).catch(error => {
-  console.error('Failed to initialize server:', error);
+  console.error('❌ Failed to initialize server:', error);
   process.exit(1);
 });
