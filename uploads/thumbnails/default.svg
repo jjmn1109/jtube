@@ -1,0 +1,10 @@
+<!-- Simple SVG placeholder for default thumbnail -->
+<svg width="320" height="240" xmlns="http://www.w3.org/2000/svg">
+  <rect width="320" height="240" fill="#f0f0f0"/>
+  <text x="160" y="120" font-family="Arial, sans-serif" font-size="24" text-anchor="middle" fill="#666">
+    📹 Video
+  </text>
+  <text x="160" y="150" font-family="Arial, sans-serif" font-size="14" text-anchor="middle" fill="#999">
+    No Thumbnail
+  </text>
+</svg>
