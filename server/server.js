@@ -28,7 +28,7 @@ if (require('fs').existsSync(path.join(ffmpegBinPath, 'ffmpeg.exe'))) {
 }
 
 // Configure upload directories
-const UPLOADS_BASE_DIR = 'Z:\\Video\\Animation\\드래곤볼_Kai';
+const UPLOADS_BASE_DIR = '/Volumes/Second Volume/Video/Animation/드래곤볼_Kai';
 const VIDEOS_DIR = UPLOADS_BASE_DIR;
 const THUMBNAILS_DIR = path.join(UPLOADS_BASE_DIR, 'thumbnails');
 
