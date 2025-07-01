@@ -1,99 +1,126 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
-import { Link } from 'react-router-dom';
+import { Video, SubtitleTrack } from '../types';
+import { fetchVideo, fetchSubtitles, fetchSubtitleContent } from '../services/videoService';
+import { getVideoUrl } from '../utils/urlUtils';
 import './VideoPlayer.css';
-import { fetchVideo, fetchVideos } from '../services/videoService';
-import { Video } from '../types';
 
 const VideoPlayer: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const [video, setVideo] = useState<Video | null>(null);
-  const [relatedVideos, setRelatedVideos] = useState<Video[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
+  const [subtitles, setSubtitles] = useState<SubtitleTrack[]>([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const apiUrl = process.env.REACT_APP_API_URL || '';
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [subtitleStyles, setSubtitleStyles] = useState<string>('');
 
   useEffect(() => {
     const loadVideo = async () => {
+      if (!id) {
+        setError('No video ID provided');
+        setLoading(false);
+        return;
+      }
+
       try {
-        if (id) {
-          setLoading(true);
-          const videoData = await fetchVideo(id);
-          setVideo(videoData);
-          
-          // Load all videos for the sidebar
-          const allVideos = await fetchVideos();
-          // Filter out the current video
-          const filteredVideos = allVideos.filter(v => v.id !== id);
-          setRelatedVideos(filteredVideos);
+        const videoData = await fetchVideo(id);
+        setVideo(videoData);
+        
+        // Load subtitles for this video
+        const subtitleData = await fetchSubtitles(id);
+        setSubtitles(subtitleData);
+        
+        // Load CSS styles for subtitles with colors
+        let combinedStyles = '';
+        for (const subtitle of subtitleData) {
+          try {
+            const content = await fetchSubtitleContent(subtitle.filename);
+            if (content.css) {
+              combinedStyles += content.css + '\n';
+            }
+          } catch (err) {
+            console.warn(`Failed to load CSS for subtitle ${subtitle.filename}:`, err);
+          }
         }
+        setSubtitleStyles(combinedStyles);
+        
       } catch (err) {
+        setError('Failed to load video');
         console.error('Error loading video:', err);
-        setError('Failed to load video. Please try again later.');
       } finally {
         setLoading(false);
       }
     };
 
     loadVideo();
-  }, [id, apiUrl]);
+  }, [id]);
 
   if (loading) {
-    return <div className="loading">Loading...</div>;
+    return <div className="loading">Loading video...</div>;
   }
 
-  if (error || !video) {
-    return <div className="error">{error || 'Video not found'}</div>;
+  if (error) {
+    return <div className="error">{error}</div>;
+  }
+
+  if (!video) {
+    return <div className="error">Video not found</div>;
   }
 
   return (
-    <div className="video-page-container">
-      <div className="video-main-content">
-        <div className="video-player-container">
+    <div className="container">
+      {/* Inject subtitle CSS styles */}
+      {subtitleStyles && (
+        <style dangerouslySetInnerHTML={{ __html: subtitleStyles }} />
+      )}
+      
+      <div className="video-player">
+        <div className="video-container">
           <video 
+            ref={videoRef}
             controls 
-            autoPlay 
-            className="video-player"
-            src={`${apiUrl}/videos/${video.url}`}
-          />
+            className="video-element"
+            src={getVideoUrl(video.filename)}
+            poster={video.thumbnailPath ? `/uploads/thumbnails/${video.thumbnailPath}` : undefined}
+            crossOrigin="anonymous"
+          >
+            {subtitles.map((subtitle, index) => (
+              <track
+                key={index}
+                kind="subtitles"
+                src={subtitle.url}
+                srcLang={subtitle.language}
+                label={subtitle.label}
+                default={index === 0}
+              />
+            ))}
+            Your browser does not support the video tag.
+          </video>
         </div>
-        <div className="video-info">
-          <h1>{video.title}</h1>
+        
+        <div className="video-details">
+          <h1 className="video-title">{video.title}</h1>
+          
           <div className="video-meta">
-            <span>{new Date(video.uploadDate).toLocaleDateString()}</span>
-            <span>{video.views} views</span>
-            <span>Uploaded by: {video.username}</span>
+            <span className="video-views">{video.views} views</span>
+            <span className="video-date">
+              Uploaded on {new Date(video.uploadDate).toLocaleDateString()}
+            </span>
           </div>
-          <p className="video-description">{video.description}</p>
-        </div>
-      </div>
-
-      <div className="video-sidebar">
-        <h3>More videos</h3>
-        <div className="related-videos-list">
-          {relatedVideos.map(relatedVideo => (
-            <Link 
-              to={`/video/${relatedVideo.id}`} 
-              className="related-video-item" 
-              key={relatedVideo.id}
-            >
-              <div className="related-video-thumbnail">
-                <img 
-                  src={`${apiUrl}/thumbnails/${relatedVideo.thumbnailUrl}`} 
-                  alt={relatedVideo.title}
-                  onError={(e) => {
-                    const target = e.target as HTMLImageElement;
-                    target.src = `${apiUrl}/thumbnails/default.svg`;
-                  }}
-                />
-              </div>
-              <div className="related-video-info">
-                <h4>{relatedVideo.title}</h4>
-                <p>{relatedVideo.username}</p>
-                <p>{relatedVideo.views} views • {new Date(relatedVideo.uploadDate).toLocaleDateString()}</p>
-              </div>
-            </Link>
-          ))}
+          
+          <div className="video-description">
+            <h3>Description</h3>
+            <p>{video.description}</p>
+          </div>
+          
+          <div className="video-info">
+            <p><strong>File:</strong> {video.originalName}</p>
+            <p><strong>Size:</strong> {(video.size / (1024 * 1024)).toFixed(2)} MB</p>
+            <p><strong>Type:</strong> {video.mimetype}</p>
+            {video.duration && (
+              <p><strong>Duration:</strong> {Math.floor(video.duration / 60)}:{(video.duration % 60).toString().padStart(2, '0')}</p>
+            )}
+          </div>
         </div>
       </div>
     </div>

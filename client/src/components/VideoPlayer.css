@@ -1,0 +1,118 @@
+.video-player {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 2rem;
+}
+
+.video-container {
+  background-color: #000;
+  border-radius: 12px;
+  overflow: hidden;
+  margin-bottom: 2rem;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+
+.video-element {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.video-details {
+  background-color: #1a1a2e;
+  border-radius: 12px;
+  padding: 2rem;
+  border: 1px solid #333;
+}
+
+.video-title {
+  color: #fff;
+  margin: 0 0 1rem 0;
+  font-size: 2rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.video-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid #333;
+}
+
+.video-views, .video-date {
+  color: #ff6b6b;
+  font-weight: 500;
+}
+
+.video-description {
+  margin-bottom: 2rem;
+}
+
+.video-description h3 {
+  color: #ff6b6b;
+  margin: 0 0 1rem 0;
+  font-size: 1.3rem;
+}
+
+.video-description p {
+  color: #ccc;
+  line-height: 1.6;
+  margin: 0;
+}
+
+.video-info {
+  background-color: #0f0f23;
+  padding: 1.5rem;
+  border-radius: 8px;
+  border: 1px solid #333;
+}
+
+.video-info p {
+  margin: 0.5rem 0;
+  color: #ccc;
+}
+
+.video-info strong {
+  color: #ff6b6b;
+}
+
+/* Subtitle color support */
+video::cue {
+  background: transparent;
+  border-radius: 4px;
+  padding: 2px 4px;
+  font-size: 1.1em;
+  line-height: 1.4;
+  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
+}
+
+/* Default subtitle colors - will be overridden by dynamic styles */
+video::cue(.color1) { color: #ffffff; }
+video::cue(.color2) { color: #ffff00; }
+video::cue(.color3) { color: #00ffff; }
+video::cue(.color4) { color: #ff00ff; }
+video::cue(.color5) { color: #00ff00; }
+video::cue(.color6) { color: #ff6b6b; }
+video::cue(.color7) { color: #4ecdc4; }
+video::cue(.color8) { color: #45b7d1; }
+video::cue(.color9) { color: #f39c12; }
+video::cue(.color10) { color: #e74c3c; }
+
+@media (max-width: 768px) {
+  .video-player {
+    padding: 1rem;
+  }
+  
+  .video-title {
+    font-size: 1.5rem;
+  }
+  
+  .video-meta {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+}

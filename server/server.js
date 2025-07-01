@@ -28,7 +28,7 @@ if (require('fs').existsSync(path.join(ffmpegBinPath, 'ffmpeg.exe'))) {
 }
 
 // Configure upload directories
-const UPLOADS_BASE_DIR = 'Z:\\Video\\Animation\\드래곤볼_Kai';
+const UPLOADS_BASE_DIR = 'Z:\\Video\\Animation\\드래곤볼_Kai';
 const VIDEOS_DIR = UPLOADS_BASE_DIR;
 const THUMBNAILS_DIR = path.join(UPLOADS_BASE_DIR, 'thumbnails');
 
@@ -204,15 +204,17 @@ const loadExistingVideos = async () => {
         let actualVideoUrl = `/uploads/${videoFile}`;
         
         const video = {
-          id: fileNameWithoutExt,
+          _id: fileNameWithoutExt,
           title: title || 'Untitled Video',
           description: '',
           filename: actualVideoFile,
-          thumbnail: thumbnailExists ? possibleThumbnailName : 'default.svg',
+          originalName: actualVideoFile,
+          mimetype: 'video/mp4', // Default, could be improved by detecting actual type
+          size: stats.size,
           uploadDate: stats.birthtime.toISOString(),
+          uploader: 'system',
+          thumbnailPath: thumbnailExists ? `thumbnails/${possibleThumbnailName}` : 'thumbnails/default.svg',
           views: 0,
-          videoUrl: actualVideoUrl,
-          thumbnailUrl: thumbnailExists ? `/uploads/thumbnails/${possibleThumbnailName}` : '/uploads/thumbnails/default.svg',
           subtitles: subtitles,
           originalFile: undefined, // Will be set if conversion happens
           processing: false // Track if video is being processed
@@ -494,7 +496,7 @@ app.get('/api/videos', (req, res) => {
 });
 
 app.get('/api/videos/:id', (req, res) => {
-  const video = videos.find(v => v.id === req.params.id);
+  const video = videos.find(v => v._id === req.params.id);
   if (!video) {
     return res.status(404).json({ error: 'Video not found' });
   }
@@ -503,6 +505,55 @@ app.get('/api/videos/:id', (req, res) => {
   video.views++;
   
   res.json(video);
+});
+
+// Get subtitles for a specific video
+app.get('/api/videos/:id/subtitles', async (req, res) => {
+  try {
+    const video = videos.find(v => v._id === req.params.id);
+    if (!video) {
+      return res.status(404).json({ error: 'Video not found' });
+    }
+    
+    const videoPath = path.join(VIDEOS_DIR, video.filename);
+    const subtitles = await subtitleUtils.findSubtitleFiles(videoPath, VIDEOS_DIR);
+    
+    res.json(subtitles);
+  } catch (error) {
+    console.error('Error fetching subtitles:', error);
+    res.status(500).json({ error: 'Failed to fetch subtitles' });
+  }
+});
+
+// Get subtitle CSS and VTT content separately
+app.get('/api/subtitles/:filename/content', async (req, res) => {
+  try {
+    const filename = decodeURIComponent(req.params.filename);
+    const subtitlePath = path.join(VIDEOS_DIR, filename);
+    
+    if (!(await fs.pathExists(subtitlePath))) {
+      return res.status(404).json({ error: 'Subtitle file not found' });
+    }
+    
+    const conversionResult = await subtitleUtils.convertSubtitleToVtt(subtitlePath);
+    
+    let vttContent, cssStyles;
+    if (conversionResult && typeof conversionResult === 'object' && conversionResult.vtt) {
+      vttContent = conversionResult.vtt;
+      cssStyles = conversionResult.css || '';
+    } else {
+      vttContent = conversionResult || '';
+      cssStyles = '';
+    }
+    
+    res.json({
+      vtt: vttContent,
+      css: cssStyles
+    });
+  } catch (error) {
+    console.error('Error getting subtitle content:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 // Serve subtitle files as WebVTT
@@ -674,15 +725,17 @@ app.post('/api/upload', authenticateToken, requireAdmin, upload.single('video'),
     const subtitles = await subtitleUtils.findSubtitleFiles(videoPath, VIDEOS_DIR);
 
     const newVideo = {
-      id: path.parse(videoFilename).name,
+      _id: path.parse(videoFilename).name,
       title: title,
       description: req.body.description || '',
       filename: videoFilename,
-      thumbnail: thumbnailFilename,
+      originalName: req.file.originalname,
+      mimetype: req.file.mimetype,
+      size: req.file.size,
       uploadDate: new Date().toISOString(),
+      uploader: req.user.username,
+      thumbnailPath: `thumbnails/${thumbnailFilename}`,
       views: 0,
-      videoUrl: `/uploads/${videoFilename}`,
-      thumbnailUrl: `/uploads/thumbnails/${thumbnailFilename}`,
       subtitles: subtitles
     };
 

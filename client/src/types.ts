@@ -1,26 +1,24 @@
 export interface Video {
-  id: string;
+  _id: string;
   title: string;
   description: string;
-  uploadDate: string;
-  url: string;
-  thumbnailUrl: string;
-  userId: string;
-  username: string;
+  filename: string;
+  originalName: string;
+  mimetype: string;
+  size: number;
+  uploadDate: Date;
+  uploader: string;
+  thumbnailPath?: string;
+  duration?: number;
   views: number;
+  subtitles?: SubtitleTrack[];
 }
 
-export interface User {
-  id: string;
-  username: string;
-  email: string;
-}
-
-export interface Comment {
-  id: string;
-  text: string;
-  userId: string;
-  username: string;
-  videoId: string;
-  createdAt: string;
+export interface SubtitleTrack {
+  filename: string;
+  language: string;
+  label: string;
+  url: string;
+  css?: string;
+  colors?: Record<string, string>;
 }

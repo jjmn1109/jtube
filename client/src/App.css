@@ -1,0 +1,28 @@
+.App {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #0f0f23 0%, #1a1a2e 100%);
+}
+
+.main-content {
+  padding: 20px 0;
+  min-height: calc(100vh - 80px);
+}
+
+.loading {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 200px;
+  font-size: 18px;
+  color: #cccccc;
+}
+
+.error {
+  color: #ff6b6b;
+  text-align: center;
+  padding: 20px;
+  background-color: rgba(255, 107, 107, 0.1);
+  border: 1px solid #ff6b6b;
+  border-radius: 8px;
+  margin: 20px;
+}

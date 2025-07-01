@@ -1,155 +1,149 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import './UploadVideo.css';
 import { uploadVideo } from '../services/videoService';
-
-interface FormData {
-  title: string;
-  description: string;
-  video: File | null;
-  thumbnail: File | null;
-}
+import './UploadVideo.css';
 
 const UploadVideo: React.FC = () => {
-  const [formData, setFormData] = useState<FormData>({
-    title: '',
-    description: '',
-    video: null,
-    thumbnail: null,
-  });
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [file, setFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: value,
-    }));
-  };
-
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const { name } = e.target;
-      setFormData(prev => ({
-        ...prev,
-        [name]: e.target.files && e.target.files[0],
-      }));
+    const selectedFile = e.target.files?.[0];
+    if (selectedFile) {
+      // Check file type
+      if (!selectedFile.type.startsWith('video/')) {
+        setError('Please select a valid video file');
+        return;
+      }
+      
+      // Check file size (limit to 100MB)
+      if (selectedFile.size > 100 * 1024 * 1024) {
+        setError('File size must be less than 100MB');
+        return;
+      }
+      
+      setFile(selectedFile);
+      setError(null);
     }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!formData.title) {
-      setError('Please enter a title');
+    if (!file || !title.trim()) {
+      setError('Please provide a title and select a video file');
       return;
     }
-    
-    if (!formData.video) {
-      setError('Please select a video to upload');
-      return;
-    }
+
+    const formData = new FormData();
+    formData.append('video', file);
+    formData.append('title', title.trim());
+    formData.append('description', description.trim());
+
+    setUploading(true);
+    setError(null);
+    setUploadProgress(0);
 
     try {
-      setLoading(true);
-      setError(null);
-
-      // Create a FormData object for the upload
-      const uploadFormData = new FormData();
-      uploadFormData.append('title', formData.title);
-      uploadFormData.append('description', formData.description);
-      if (formData.video) {
-        uploadFormData.append('video', formData.video);
-      }
-      if (formData.thumbnail) {
-        uploadFormData.append('thumbnail', formData.thumbnail);
-      }
-
-      // Upload the video
-      await uploadVideo(uploadFormData, (progress) => {
+      const uploadedVideo = await uploadVideo(formData, (progress) => {
         setUploadProgress(progress);
       });
       
-      // Redirect to the home page after successful upload
-      navigate('/');
+      // Reset form
+      setTitle('');
+      setDescription('');
+      setFile(null);
+      setUploadProgress(0);
+      
+      // Navigate to the uploaded video
+      navigate(`/video/${uploadedVideo._id}`);
     } catch (err) {
-      console.error('Upload failed:', err);
       setError('Failed to upload video. Please try again.');
+      console.error('Upload error:', err);
     } finally {
-      setLoading(false);
+      setUploading(false);
     }
   };
 
   return (
-    <div className="upload-container">
-      <div className="upload-form-container">
+    <div className="container">
+      <div className="upload-video">
         <h2>Upload Video</h2>
-        {error && <div className="error-message">{error}</div>}
-        <form className="upload-form" onSubmit={handleSubmit}>
+        
+        <form onSubmit={handleSubmit} className="upload-form">
           <div className="form-group">
             <label htmlFor="title">Title *</label>
             <input
               type="text"
               id="title"
-              name="title"
-              value={formData.title}
-              onChange={handleInputChange}
-              disabled={loading}
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Enter video title"
               required
+              disabled={uploading}
             />
           </div>
+
           <div className="form-group">
             <label htmlFor="description">Description</label>
             <textarea
               id="description"
-              name="description"
-              value={formData.description}
-              onChange={handleInputChange}
-              disabled={loading}
-              rows={5}
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Enter video description"
+              rows={4}
+              disabled={uploading}
             />
           </div>
+
           <div className="form-group">
             <label htmlFor="video">Video File *</label>
             <input
               type="file"
               id="video"
-              name="video"
               accept="video/*"
               onChange={handleFileChange}
-              disabled={loading}
               required
+              disabled={uploading}
+              className="file-input"
             />
-            <small>Supported formats: MP4, WebM (max size: 500MB)</small>
+            {file && (
+              <div className="file-info">
+                <p><strong>Selected:</strong> {file.name}</p>
+                <p><strong>Size:</strong> {(file.size / (1024 * 1024)).toFixed(2)} MB</p>
+              </div>
+            )}
           </div>
-          <div className="form-group">
-            <label htmlFor="thumbnail">Custom Thumbnail (optional)</label>
-            <input
-              type="file"
-              id="thumbnail"
-              name="thumbnail"
-              accept="image/*"
-              onChange={handleFileChange}
-              disabled={loading}
-            />
-            <small>Supported formats: JPG, PNG (recommended size: 1280×720)</small>
-          </div>
-          
-          {loading && (
-            <div className="progress-container">
-              <div 
-                className="progress-bar" 
-                style={{ width: `${uploadProgress}%` }}
-              ></div>
-              <span>{uploadProgress}% Uploaded</span>
+
+          {error && (
+            <div className="error-message">
+              {error}
             </div>
           )}
 
-          <button type="submit" className="upload-button" disabled={loading}>
-            {loading ? 'Uploading...' : 'Upload Video'}
+          {uploading && (
+            <div className="upload-progress">
+              <div className="progress-bar">
+                <div 
+                  className="progress-fill" 
+                  style={{ width: `${uploadProgress}%` }}
+                />
+              </div>
+              <p>Uploading: {uploadProgress}%</p>
+            </div>
+          )}
+
+          <button 
+            type="submit" 
+            disabled={uploading || !file || !title.trim()}
+            className="upload-button"
+          >
+            {uploading ? 'Uploading...' : 'Upload Video'}
           </button>
         </form>
       </div>

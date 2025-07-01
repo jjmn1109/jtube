@@ -1,118 +1,139 @@
-.upload-container {
-  display: flex;
-  justify-content: center;
-  padding: 40px 20px;
-}
-
-.upload-form-container {
-  background: white;
-  border-radius: 8px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-  padding: 30px;
-  width: 100%;
+.upload-video {
   max-width: 600px;
+  margin: 0 auto;
+  padding: 2rem;
 }
 
-.upload-form-container h2 {
-  margin-bottom: 24px;
-  color: #202020;
-  font-size: 1.5rem;
+.upload-video h2 {
+  color: #ff6b6b;
+  text-align: center;
+  margin-bottom: 2rem;
+  font-size: 2rem;
+}
+
+.upload-form {
+  background-color: #1a1a2e;
+  padding: 2rem;
+  border-radius: 12px;
+  border: 1px solid #333;
+}
+
+.form-group {
+  margin-bottom: 1.5rem;
+}
+
+.form-group label {
+  display: block;
+  color: #ff6b6b;
+  margin-bottom: 0.5rem;
+  font-weight: 500;
+}
+
+.form-group input,
+.form-group textarea {
+  width: 100%;
+  padding: 12px;
+  background-color: #0f0f23;
+  border: 1px solid #333;
+  border-radius: 8px;
+  color: #ccc;
+  font-size: 16px;
+  transition: border-color 0.3s ease;
+}
+
+.form-group input:focus,
+.form-group textarea:focus {
+  outline: none;
+  border-color: #ff6b6b;
+}
+
+.file-input {
+  cursor: pointer;
+}
+
+.file-info {
+  margin-top: 1rem;
+  padding: 1rem;
+  background-color: #0f0f23;
+  border-radius: 8px;
+  border: 1px solid #333;
+}
+
+.file-info p {
+  margin: 0.25rem 0;
+  color: #ccc;
+}
+
+.file-info strong {
+  color: #ff6b6b;
+}
+
+.error-message {
+  background-color: rgba(255, 107, 107, 0.1);
+  border: 1px solid #ff6b6b;
+  color: #ff6b6b;
+  padding: 1rem;
+  border-radius: 8px;
+  margin-bottom: 1rem;
   text-align: center;
 }
 
-.upload-form .form-group {
-  margin-bottom: 20px;
+.upload-progress {
+  margin-bottom: 1.5rem;
 }
 
-.upload-form label {
-  display: block;
-  margin-bottom: 8px;
-  font-size: 1rem;
-  color: #202020;
-  text-align: left;
-}
-
-.upload-form input[type="text"],
-.upload-form textarea {
+.progress-bar {
   width: 100%;
-  padding: 12px;
-  border: 1px solid #e0e0e0;
+  height: 8px;
+  background-color: #333;
   border-radius: 4px;
-  font-size: 1rem;
-  font-family: inherit;
+  overflow: hidden;
+  margin-bottom: 0.5rem;
 }
 
-.upload-form input[type="file"] {
-  width: 100%;
-  padding: 8px 0;
+.progress-fill {
+  height: 100%;
+  background-color: #ff6b6b;
+  transition: width 0.3s ease;
 }
 
-.upload-form small {
-  display: block;
-  margin-top: 5px;
-  font-size: 0.8rem;
-  color: #707070;
-}
-
-.upload-form input:focus,
-.upload-form textarea:focus {
-  outline: none;
-  border-color: #065fd4;
+.upload-progress p {
+  text-align: center;
+  color: #ff6b6b;
+  margin: 0;
+  font-weight: 500;
 }
 
 .upload-button {
   width: 100%;
-  padding: 12px;
-  background-color: #065fd4;
+  padding: 15px;
+  background-color: #ff6b6b;
   color: white;
   border: none;
-  border-radius: 4px;
-  font-size: 1rem;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: 600;
   cursor: pointer;
-  margin-top: 16px;
-  transition: background-color 0.2s;
+  transition: all 0.3s ease;
 }
 
-.upload-button:hover {
-  background-color: #0556bf;
+.upload-button:hover:not(:disabled) {
+  background-color: #ff5252;
+  transform: translateY(-2px);
 }
 
 .upload-button:disabled {
-  background-color: #cccccc;
+  background-color: #666;
   cursor: not-allowed;
+  transform: none;
 }
 
-.error-message {
-  background-color: #ffebee;
-  color: #d32f2f;
-  padding: 10px;
-  border-radius: 4px;
-  margin-bottom: 20px;
-  font-size: 0.9rem;
-  text-align: center;
-}
-
-.progress-container {
-  margin: 20px 0;
-  background-color: #f0f0f0;
-  border-radius: 4px;
-  overflow: hidden;
-  height: 20px;
-  position: relative;
-}
-
-.progress-bar {
-  height: 100%;
-  background-color: #065fd4;
-  transition: width 0.3s ease;
-}
-
-.progress-container span {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  font-size: 0.8rem;
-  color: white;
-  text-shadow: 0 0 2px rgba(0, 0, 0, 0.5);
+@media (max-width: 768px) {
+  .upload-video {
+    padding: 1rem;
+  }
+  
+  .upload-form {
+    padding: 1.5rem;
+  }
 }

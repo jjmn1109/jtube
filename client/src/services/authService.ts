@@ -2,40 +2,39 @@ import axios from 'axios';
 
 const apiUrl = process.env.REACT_APP_API_URL || '';
 
-export const login = async (username: string, password: string): Promise<void> => {
+export interface LoginCredentials {
+  username: string;
+  password: string;
+}
+
+export interface AuthResponse {
+  token: string;
+  user: {
+    id: string;
+    username: string;
+  };
+}
+
+export const login = async (credentials: LoginCredentials): Promise<AuthResponse> => {
   try {
-    const response = await axios.post(`${apiUrl}/api/auth/login`, {
-      username,
-      password,
-    });
-    
-    const { token, user } = response.data;
+    const response = await axios.post(`${apiUrl}/api/auth/login`, credentials);
+    const { token } = response.data;
     localStorage.setItem('token', token);
-    localStorage.setItem('user', JSON.stringify(user));
+    return response.data;
   } catch (error) {
-    console.error('Login failed:', error);
+    console.error('Login error:', error);
     throw error;
   }
 };
 
 export const logout = (): void => {
   localStorage.removeItem('token');
-  localStorage.removeItem('user');
 };
 
 export const isAuthenticated = (): boolean => {
-  const token = localStorage.getItem('token');
-  return !!token;
+  return !!localStorage.getItem('token');
 };
 
-export const getCurrentUser = (): any => {
-  const userStr = localStorage.getItem('user');
-  if (userStr) {
-    try {
-      return JSON.parse(userStr);
-    } catch (e) {
-      return null;
-    }
-  }
-  return null;
+export const getToken = (): string | null => {
+  return localStorage.getItem('token');
 };
