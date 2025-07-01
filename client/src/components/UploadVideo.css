@@ -1,0 +1,118 @@
+.upload-container {
+  display: flex;
+  justify-content: center;
+  padding: 40px 20px;
+}
+
+.upload-form-container {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  padding: 30px;
+  width: 100%;
+  max-width: 600px;
+}
+
+.upload-form-container h2 {
+  margin-bottom: 24px;
+  color: #202020;
+  font-size: 1.5rem;
+  text-align: center;
+}
+
+.upload-form .form-group {
+  margin-bottom: 20px;
+}
+
+.upload-form label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 1rem;
+  color: #202020;
+  text-align: left;
+}
+
+.upload-form input[type="text"],
+.upload-form textarea {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  font-size: 1rem;
+  font-family: inherit;
+}
+
+.upload-form input[type="file"] {
+  width: 100%;
+  padding: 8px 0;
+}
+
+.upload-form small {
+  display: block;
+  margin-top: 5px;
+  font-size: 0.8rem;
+  color: #707070;
+}
+
+.upload-form input:focus,
+.upload-form textarea:focus {
+  outline: none;
+  border-color: #065fd4;
+}
+
+.upload-button {
+  width: 100%;
+  padding: 12px;
+  background-color: #065fd4;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 1rem;
+  cursor: pointer;
+  margin-top: 16px;
+  transition: background-color 0.2s;
+}
+
+.upload-button:hover {
+  background-color: #0556bf;
+}
+
+.upload-button:disabled {
+  background-color: #cccccc;
+  cursor: not-allowed;
+}
+
+.error-message {
+  background-color: #ffebee;
+  color: #d32f2f;
+  padding: 10px;
+  border-radius: 4px;
+  margin-bottom: 20px;
+  font-size: 0.9rem;
+  text-align: center;
+}
+
+.progress-container {
+  margin: 20px 0;
+  background-color: #f0f0f0;
+  border-radius: 4px;
+  overflow: hidden;
+  height: 20px;
+  position: relative;
+}
+
+.progress-bar {
+  height: 100%;
+  background-color: #065fd4;
+  transition: width 0.3s ease;
+}
+
+.progress-container span {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 0.8rem;
+  color: white;
+  text-shadow: 0 0 2px rgba(0, 0, 0, 0.5);
+}
