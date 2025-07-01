@@ -6,11 +6,11 @@
   "scripts": {
     "dev": "concurrently \"npm run server\" \"npm run client\"",
     "server": "nodemon server/server.js",
-    "client": "cd client && npm start",
-    "build": "cd client && npm run build",
-    "install-all": "npm install && cd client && npm install",
+    "client": "cd client; npm start",
+    "build": "cd client; npm run build",
+    "install-all": "npm install; cd client; npm install",
     "start": "node server/server.js",
-    "heroku-postbuild": "cd client && npm install && npm run build"
+    "heroku-postbuild": "cd client; npm install; npm run build"
   },
   "dependencies": {
     "bcryptjs": "^3.0.2",
@@ -20,10 +20,12 @@
     "ffmpeg-static": "^5.1.0",
     "fluent-ffmpeg": "^2.1.2",
     "fs-extra": "^11.1.1",
+    "ftp-srv": "^4.6.3",
     "he": "^1.2.0",
     "iconv-lite": "^0.6.3",
     "jsonwebtoken": "^9.0.2",
     "multer": "^1.4.4",
+    "ssh2-sftp-client": "^12.0.1",
     "subtitle-converter": "^3.0.12",
     "uuid": "^9.0.0"
   },

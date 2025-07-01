@@ -153,6 +153,8 @@ const syncVideosFromSFTP = async () => {
               isStreamed: true, // Flag to indicate this is streamed from SFTP
               size: subFile.size
             });
+            
+            console.log(`📄 Cataloged subtitle: ${subFile.name}`);
           }
           
           // Create video object for SFTP-streamed content
@@ -164,7 +166,7 @@ const syncVideosFromSFTP = async () => {
             originalName: fileName,
             mimetype: 'video/mp4', // Default
             size: remoteFile.size,
-            uploadDate: remoteFile.modifyTime ? new Date(remoteFile.modifyTime).toISOString() : new Date().toISOString(),
+            uploadDate: remoteFile.modifyTime ? remoteFile.modifyTime.toISOString() : new Date().toISOString(),
             uploader: 'sftp-sync',
             thumbnailPath: 'thumbnails/default.svg',
             views: 0,
@@ -181,7 +183,7 @@ const syncVideosFromSFTP = async () => {
           if (existingVideo.size !== remoteFile.size) {
             console.log(`📝 Updating metadata for changed video: ${fileName}`);
             existingVideo.size = remoteFile.size;
-            existingVideo.uploadDate = remoteFile.modifyTime ? new Date(remoteFile.modifyTime).toISOString() : existingVideo.uploadDate;
+            existingVideo.uploadDate = remoteFile.modifyTime ? remoteFile.modifyTime.toISOString() : existingVideo.uploadDate;
           }
         }
         
@@ -266,6 +268,7 @@ const streamSubtitleFromSFTP = async (remoteFileName) => {
     }
     
     const remotePath = `${SFTP_CONFIG.remotePath}/${remoteFileName}`;
+    console.log(`📄 Creating stream for SFTP subtitle: ${remotePath}`);
     
     // Get file stats first
     const fileStats = await sftp.stat(remotePath);
@@ -710,6 +713,7 @@ app.get('/api/videos/sftp/:filename', async (req, res) => {
 app.get('/api/subtitles/sftp/:filename', async (req, res) => {
   try {
     const filename = decodeURIComponent(req.params.filename);
+    console.log(`📄 SFTP subtitle stream request for: ${filename}`);
     
     const streamData = await streamSubtitleFromSFTP(filename);
     const { stream } = streamData;
@@ -719,21 +723,18 @@ app.get('/api/subtitles/sftp/:filename', async (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Cache-Control', 'public, max-age=3600');
     
-    // Read the subtitle content from stream as binary buffer
-    const chunks = [];
+    // Read the subtitle content from stream
+    let subtitleContent = '';
     
     stream.on('data', (chunk) => {
-      chunks.push(chunk);
+      subtitleContent += chunk.toString('utf8');
     });
     
     stream.on('end', async () => {
       try {
-        // Combine all chunks into a single buffer to preserve original encoding
-        const subtitleBuffer = Buffer.concat(chunks);
-        
-        // Write the buffer directly to preserve original encoding
+        // Convert subtitle content to VTT format
         const tempFilePath = path.join(os.tmpdir(), `temp_${Date.now()}_${filename}`);
-        await fs.writeFile(tempFilePath, subtitleBuffer);
+        await fs.writeFile(tempFilePath, subtitleContent, 'utf8');
         
         const conversionResult = await subtitleUtils.convertSubtitleToVtt(tempFilePath);
         

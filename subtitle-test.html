@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Subtitle Test</title>
+</head>
+<body>
+    <h1>Subtitle Loading Test</h1>
+    
+    <video controls width="800" height="600" crossorigin="anonymous">
+        <source src="http://localhost:10001/uploads/videos/test_subtitle.vtt" type="video/mp4" />
+        <track kind="subtitles" src="http://localhost:10001/api/subtitles/test_subtitle.vtt" srclang="ko" label="한국어" default />
+        Your browser does not support the video tag.
+    </video>
+    
+    <div style="margin-top: 20px;">
+        <h2>Direct Subtitle Link Test:</h2>
+        <a href="http://localhost:10001/api/subtitles/test_subtitle.vtt" target="_blank">
+            Open Subtitle File Directly
+        </a>
+    </div>
+    
+    <div style="margin-top: 20px;">
+        <h2>Fetch Test:</h2>
+        <button onclick="testFetch()">Test Fetch Subtitle</button>
+        <pre id="result"></pre>
+    </div>
+    
+    <script>
+        // Add video event listeners
+        const video = document.querySelector('video');
+        video.addEventListener('loadstart', () => console.log('Video load started'));
+        video.addEventListener('canplay', () => {
+            console.log('Video can play');
+            console.log('Text tracks:', video.textTracks.length);
+            for (let i = 0; i < video.textTracks.length; i++) {
+                const track = video.textTracks[i];
+                console.log(`Track ${i}:`, {
+                    kind: track.kind,
+                    label: track.label,
+                    language: track.language,
+                    mode: track.mode
+                });
+                track.mode = 'showing';
+                track.addEventListener('error', (e) => console.error(`Track ${i} error:`, e));
+                track.addEventListener('load', () => console.log(`Track ${i} loaded`));
+            }
+        });
+        
+        async function testFetch() {
+            try {
+                const response = await fetch('http://localhost:10001/api/subtitles/test_subtitle.vtt');
+                const text = await response.text();
+                document.getElementById('result').textContent = text.substring(0, 500) + '...';
+                console.log('Fetch successful:', response.status, response.headers.get('content-type'));
+            } catch (error) {
+                document.getElementById('result').textContent = 'Fetch error: ' + error.message;
+                console.error('Fetch error:', error);
+            }
+        }
+    </script>
+</body>
+</html>

@@ -12,6 +12,8 @@ export interface Video {
   duration?: number;
   views: number;
   subtitles?: SubtitleTrack[];
+  isStreamed?: boolean; // Flag to indicate if video is streamed from SFTP
+  streamUrl?: string; // URL for streaming from SFTP
 }
 
 export interface SubtitleTrack {
@@ -21,4 +23,6 @@ export interface SubtitleTrack {
   url: string;
   css?: string;
   colors?: Record<string, string>;
+  isStreamed?: boolean; // Flag to indicate if subtitle is streamed from SFTP
+  size?: number; // File size for SFTP subtitles
 }

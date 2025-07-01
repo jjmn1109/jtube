@@ -6,6 +6,7 @@ const iconv = require('iconv-lite');
 // Convert SMI format to WebVTT format
 const convertSmiToVtt = (smiContent) => {
   try {
+    console.log('Converting SMI to VTT, content length:', smiContent.length);
     
     // Helper function to extract and normalize color from font tags
     const extractFontColor = (text) => {
@@ -105,6 +106,8 @@ const convertSmiToVtt = (smiContent) => {
       });
     }
     
+    console.log('Found', matches.length, 'SYNC tags');
+    
     // Process each sync block
     for (let i = 0; i < matches.length; i++) {
       const currentMatch = matches[i];
@@ -121,6 +124,7 @@ const convertSmiToVtt = (smiContent) => {
       }
       
       const content = smiContent.substring(currentMatch.index, endIndex);
+      console.log(`Processing SYNC block ${i + 1}, content length: ${content.length}`);
       
       // Try multiple patterns to extract text from P tags - be more greedy
       let pTagMatch = content.match(/<P[^>]*?Class\s*=\s*[^>]*?>(.*?)(?:<\/P>|<SYNC|$)/is);
@@ -148,9 +152,14 @@ const convertSmiToVtt = (smiContent) => {
       
       if (pTagMatch) {
         let text = pTagMatch[1];
+        console.log(`Raw extracted text: "${text.substring(0, 100)}..."`);
+        console.log(`Raw text contains &:`, text.includes('&'));
+        console.log(`Raw text contains <br>:`, text.includes('<br>'));
+        console.log(`Raw text character codes:`, text.split('').slice(0, 50).map(c => `${c}(${c.charCodeAt(0)})`).join(' '));
         
         // Process font color tags BEFORE cleaning HTML tags
         text = processTextWithColors(text, colorStyles);
+        console.log(`Text after color processing: "${text}"`);
         
         // Clean up the text - handle HTML tags and entities
         text = text.replace(/<br\s*\/?>/gi, '\n'); // Replace <br> tags with line breaks FIRST
@@ -175,6 +184,10 @@ const convertSmiToVtt = (smiContent) => {
         text = text.replace(/\n{3,}/g, '\n\n'); // Limit to max 2 consecutive line breaks
         text = text.trim();
         
+        console.log(`Cleaned text: "${text}"`);
+        console.log(`Text contains newlines:`, text.includes('\n'));
+        console.log(`Number of newlines:`, (text.match(/\n/g) || []).length);
+        
         // Skip empty or meaningless text
         if (text && text !== '&nbsp;' && text.length > 0 && !text.match(/^[\s\u00A0]*$/)) {
           const startTime = formatTime(currentMatch.time);
@@ -184,13 +197,17 @@ const convertSmiToVtt = (smiContent) => {
           vttContent += `${startTime} --> ${endTime}\n`;
           vttContent += `${text}\n\n`;
           sequenceNumber++;
+          
+          console.log(`Added subtitle ${sequenceNumber-1}: "${text}"`);
+          console.log(`VTT entry preview: "${startTime} --> ${endTime}\\n${text}"`);
         }
+      } else {
+        console.log(`No P tag match found in content: "${content.substring(0, 200)}..."`);
       }
     }
     
-    // Remove the remaining debug statements
-    // console.log('Generated', sequenceNumber - 1, 'subtitle entries');
-    // console.log('Color styles found:', colorStyles);
+    console.log('Generated', sequenceNumber - 1, 'subtitle entries');
+    console.log('Color styles found:', colorStyles);
     
     // Generate CSS for the colors
     let cssStyles = '';
@@ -380,20 +397,25 @@ const convertSubtitleToVtt = async (subtitlePath) => {
             const garbledMatches = (testContent.match(garbledPatterns) || []).length;
             score -= garbledMatches * 20;
             
+            console.log(`Encoding ${encoding} score: ${score}, Korean chars: ${koreanChars}, replacement chars: ${replacementChars}`);
+            
             if (score > bestScore) {
               bestScore = score;
               bestContent = testContent;
+              console.log(`New best encoding: ${encoding} with score ${score}`);
             }
           } catch (err) {
-            // Failed to decode with this encoding, try next
+            console.log(`Failed to decode with ${encoding}:`, err.message);
           }
         }
         
         if (bestContent) {
           content = bestContent;
+          console.log(`Using best content with score ${bestScore}`);
         } else {
           // Fallback to UTF-8
           content = buffer.toString('utf-8');
+          console.log('No good encoding found, falling back to UTF-8');
         }
       } catch (err) {
         console.error('Error reading SMI file:', err);
@@ -405,6 +427,8 @@ const convertSubtitleToVtt = async (subtitlePath) => {
       // For other formats, use UTF-8
       content = await fs.readFile(subtitlePath, 'utf-8');
     }
+    
+    console.log('File content preview (first 300 chars):', content.substring(0, 300));
     
     switch (extension) {
       case '.smi':

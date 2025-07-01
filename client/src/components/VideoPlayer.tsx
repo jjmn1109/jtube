@@ -39,14 +39,13 @@ const VideoPlayer: React.FC = () => {
               combinedStyles += content.css + '\n';
             }
           } catch (err) {
-            console.warn(`Failed to load CSS for subtitle ${subtitle.filename}:`, err);
+            // Failed to load CSS for subtitle
           }
         }
         setSubtitleStyles(combinedStyles);
         
       } catch (err) {
         setError('Failed to load video');
-        console.error('Error loading video:', err);
       } finally {
         setLoading(false);
       }
@@ -80,7 +79,7 @@ const VideoPlayer: React.FC = () => {
             ref={videoRef}
             controls 
             className="video-element"
-            src={getVideoUrl(video.filename)}
+            src={getVideoUrl(video)}
             poster={video.thumbnailPath ? `/uploads/thumbnails/${video.thumbnailPath}` : undefined}
             crossOrigin="anonymous"
           >
