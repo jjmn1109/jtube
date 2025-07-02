@@ -41,6 +41,17 @@ const VideoPlayer: React.FC = () => {
         const videoData = await fetchVideo(id);
         setVideo(videoData);
         
+        if (videoRef.current) {
+          videoRef.current.autoplay = true;
+          // Force play on video load
+          const playPromise = videoRef.current.play();
+          if (playPromise !== undefined) {
+            playPromise.catch(error => {
+              console.warn('Auto-play was prevented:', error);
+            });
+          }
+        }
+        
         // Load subtitles for this video
         const subtitleData = await fetchSubtitles(id);
         setSubtitles(subtitleData);
@@ -114,9 +125,10 @@ const VideoPlayer: React.FC = () => {
           <video 
             ref={videoRef}
             controls 
+            autoPlay
             className="video-element"
             src={getVideoUrl(video.filename)}
-            poster={video.thumbnailPath ? getThumbnailUrl(video.thumbnailPath) : undefined}
+            poster={video.thumbnailPath ? getThumbnailUrl(video.thumbnailPath) : getThumbnailUrl('default.svg')}
             crossOrigin="anonymous"
             onEnded={handleVideoEnd}
           >
@@ -130,7 +142,6 @@ const VideoPlayer: React.FC = () => {
                 default={index === 0}
               />
             ))}
-            Your browser does not support the video tag.
           </video>
         </div>
         
@@ -165,10 +176,11 @@ const VideoPlayer: React.FC = () => {
           <Link key={video._id} to={`/video/${video._id}`} className="side-video-card">
             <div className="side-video-thumbnail">
               <img 
-                src={getThumbnailUrl(video.thumbnailPath || 'thumbnails/default.svg')} 
+                src={getThumbnailUrl(video.thumbnailPath || 'default.svg')}
                 alt={video.title}
+                loading="lazy"
                 onError={(e) => {
-                  e.currentTarget.style.display = 'none';
+                  e.currentTarget.src = getThumbnailUrl('default.svg');
                 }}
               />
             </div>

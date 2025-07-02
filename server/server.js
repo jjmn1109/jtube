@@ -5,30 +5,19 @@ const path = require('path');
 const fs = require('fs-extra');
 const { v4: uuidv4 } = require('uuid');
 const ffmpeg = require('fluent-ffmpeg');
-const ffmpegStatic = require('ffmpeg-static');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const session = require('express-session');
 const subtitleUtils = require('./subtitleUtils');
 
 // Set the path to ffmpeg
+const ffmpegStatic = require('ffmpeg-static');
+const ffprobePath = require('ffprobe-static').path;
+
 ffmpeg.setFfmpegPath(ffmpegStatic);
-
-// Set explicit FFmpeg paths for Windows installation
-const os = require('os');
-const ffmpegBinPath = path.join(os.homedir(), 'AppData', 'Local', 'Microsoft', 'WinGet', 'Packages', 'Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe', 'ffmpeg-7.1.1-full_build', 'bin');
-
-// Check if winget FFmpeg installation exists, otherwise use ffmpeg-static
-if (require('fs').existsSync(path.join(ffmpegBinPath, 'ffmpeg.exe'))) {
-  ffmpeg.setFfmpegPath(path.join(ffmpegBinPath, 'ffmpeg.exe'));
-  ffmpeg.setFfprobePath(path.join(ffmpegBinPath, 'ffprobe.exe'));
-  console.log('Using system FFmpeg installation:', ffmpegBinPath);
-} else {
-  console.log('Using bundled FFmpeg from ffmpeg-static');
-}
+ffmpeg.setFfprobePath(ffprobePath);
 
 // Configure upload directories
-//const UPLOADS_BASE_DIR = '/Volumes/Second Volume/Video/Animation/드래곤볼_Kai';
 const UPLOADS_BASE_DIR = '/Users/chromatography0429/Movies';
 const VIDEOS_DIR = UPLOADS_BASE_DIR;
 const THUMBNAILS_DIR = path.join(UPLOADS_BASE_DIR, 'thumbnails');
@@ -42,16 +31,187 @@ const users = [
   {
     id: 'admin',
     username: 'admin',
-    password: '$2a$10$QxJzL6u8jHr.d3p3v8Z9/.3GCjvX9Kj8HwYvN1M2L5Qr7Ss9Tt0uG', // chromato4029
+    password: '', // Will be hashed on initialization
     role: 'admin'
   },
   {
     id: 'user',
-    username: 'user', 
-    password: '$2a$10$TcFd8h8/3XuVhF2gYzNhOu4mD8.eP3GQs1N7Vk9Lm4Op6Rs8Xx1yS', // Test1234!
+    username: 'user',
+    password: '', // Will be hashed on initialization
     role: 'user'
   }
 ];
+
+// Video processing functions
+const needsConversion = async (videoPath) => {
+  return new Promise((resolve) => {
+    ffmpeg.ffprobe(videoPath, (err, metadata) => {
+      if (err) {
+        console.error('Error probing video:', err);
+        resolve(false);
+        return;
+      }
+      
+      if (!metadata || !metadata.streams) {
+        console.error('Invalid metadata:', metadata);
+        resolve(false);
+        return;
+      }
+      
+      const videoStream = metadata.streams.find(stream => stream.codec_type === 'video');
+      const audioStream = metadata.streams.find(stream => stream.codec_type === 'audio');
+      
+      if (!videoStream) {
+        console.error('No video stream found');
+        resolve(false);
+        return;
+      }
+      
+      const problemCodecs = ['xvid', 'divx', 'wmv3', 'vc1', 'theora', 'vp6f'];
+      const problemAudioCodecs = ['ac3', 'dts', 'pcm_s16le', 'mp2'];
+      
+      const needsVideoConversion = videoStream && problemCodecs.includes(videoStream.codec_name?.toLowerCase());
+      const needsAudioConversion = audioStream && problemAudioCodecs.includes(audioStream.codec_name?.toLowerCase());
+      
+      resolve(needsVideoConversion || needsAudioConversion);
+    });
+  });
+};
+
+const convertVideoToBrowserCompatible = (inputPath, outputPath) => {
+  return new Promise((resolve, reject) => {
+    console.log(`Converting video: ${inputPath} -> ${outputPath}`);
+    
+    ffmpeg(inputPath)
+      .videoCodec('libx264')
+      .audioCodec('aac')
+      .format('mp4')
+      .outputOptions([
+        '-preset fast',
+        '-crf 23',
+        '-movflags +faststart'
+      ])
+      .on('start', (commandLine) => {
+        console.log('FFmpeg command:', commandLine);
+      })
+      .on('progress', (progress) => {
+        console.log(`Conversion progress: ${Math.round(progress.percent)}%`);
+      })
+      .on('end', () => {
+        console.log(`Video conversion completed: ${outputPath}`);
+        resolve();
+      })
+      .on('error', (err) => {
+        console.error('Video conversion error:', err);
+        reject(err);
+      })
+      .save(outputPath);
+  });
+};
+
+const generateThumbnail = (videoPath, thumbnailPath) => {
+  return new Promise((resolve, reject) => {
+    ffmpeg(videoPath)
+      .screenshots({
+        timestamps: ['10%'],
+        filename: path.basename(thumbnailPath),
+        folder: path.dirname(thumbnailPath),
+        size: '320x180'
+      })
+      .on('end', resolve)
+      .on('error', reject);
+  });
+};
+
+// Function to convert videos for browser compatibility (background processing)
+const convertVideosInBackground = async () => {
+  try {
+    console.log('🔄 Checking videos for browser compatibility...');
+    
+    // Process videos in the background without blocking
+    setImmediate(async () => {
+      let processed = 0;
+      let converted = 0;
+      
+      for (const video of videos) {
+        try {
+          if (!video || !video.filename) {
+            console.log('⚠️ Skipping invalid video entry');
+            processed++;
+            continue;
+          }
+
+          const videoPath = path.join(VIDEOS_DIR, video.filename);
+          
+          // Check if video file exists
+          if (!(await fs.pathExists(videoPath))) {
+            console.log(`⚠️ Video file not found: ${video.filename}`);
+            processed++;
+            continue;
+          }
+          
+          // Check if video needs conversion
+          const conversionNeeded = await needsConversion(videoPath);
+          if (conversionNeeded && !video.originalFile) {
+            const safeFilename = encodeURIComponent(video.filename).replace(/%/g, '_');
+            const convertedFileName = path.parse(safeFilename).name + '_converted.mp4';
+            const convertedPath = path.join(VIDEOS_DIR, convertedFileName);
+            
+            // Skip if already converted
+            if (await fs.pathExists(convertedPath)) {
+              console.log(`📹 Converted version already exists for ${video.filename}, updating metadata...`);
+              const videoIndex = videos.findIndex(v => v._id === video._id);
+              if (videoIndex !== -1) {
+                videos[videoIndex].filename = convertedFileName;
+                videos[videoIndex].videoUrl = `/uploads/${convertedFileName}`;
+                videos[videoIndex].originalFile = video.filename;
+              }
+              processed++;
+              converted++;
+              continue;
+            }
+            
+            try {
+              console.log(`🔄 [${processed + 1}/${videos.length}] Converting ${video.filename} for browser compatibility...`);
+              await convertVideoToBrowserCompatible(videoPath, convertedPath);
+              
+              // Update video metadata
+              const videoIndex = videos.findIndex(v => v._id === video._id);
+              if (videoIndex !== -1) {
+                videos[videoIndex].filename = convertedFileName;
+                videos[videoIndex].videoUrl = `/uploads/${convertedFileName}`;
+                videos[videoIndex].originalFile = video.filename;
+              }
+              
+              console.log(`✅ Successfully converted ${video.filename} to ${convertedFileName}`);
+              converted++;
+            } catch (error) {
+              console.error(`❌ Failed to convert ${video.filename}:`, error.message);
+            }
+          }
+          
+          processed++;
+          
+          // Add a small delay between operations to prevent system overload
+          await new Promise(resolve => setTimeout(resolve, 200));
+          
+        } catch (error) {
+          console.error(`❌ Error processing video ${video.filename}:`, error);
+          processed++;
+        }
+      }
+      
+      if (converted > 0) {
+        console.log(`🎬 Background video conversion complete. Converted ${converted} videos for browser compatibility.`);
+      } else {
+        console.log(`📹 All videos are already browser compatible.`);
+      }
+    });
+    
+  } catch (error) {
+    console.error('Error in convertVideosInBackground:', error);
+  }
+};
 
 // Initialize password hashes
 const initializeUsers = async () => {
@@ -294,35 +454,29 @@ const generateThumbnails = async () => {
       
       for (const video of videos) {
         try {
+          if (!video || !video.filename) {
+            console.log('⚠️ Skipping invalid video entry');
+            processed++;
+            continue;
+          }
+
           // Generate thumbnail if:
           // 1. Video is using default.svg (no custom thumbnail)
           // 2. Video has a custom thumbnail name but the file doesn't exist
-          const needsThumbnail = video.thumbnail === 'default.svg' || 
-                                (video.thumbnail !== 'default.svg' && !(await fs.pathExists(path.join(thumbnailsDir, video.thumbnail))));
+          const needsThumbnail = !video.thumbnailPath || 
+                                video.thumbnailPath === 'thumbnails/default.svg' || 
+                                !(await fs.pathExists(path.join(UPLOADS_BASE_DIR, video.thumbnailPath)));
           
           if (needsThumbnail) {
+            const safeFilename = encodeURIComponent(video.filename).replace(/%/g, '_');
             const videoPath = path.join(videosDir, video.filename);
-            const thumbnailName = path.parse(video.filename).name + '.jpg';
+            const thumbnailName = path.parse(safeFilename).name + '.jpg';
             const newThumbnailPath = path.join(thumbnailsDir, thumbnailName);
             
             // Check if video file exists
             if (!(await fs.pathExists(videoPath))) {
               console.log(`⚠️ Video file not found for thumbnail generation: ${video.filename}`);
               processed++;
-              continue;
-            }
-            
-            // Check if we're going to overwrite an existing thumbnail
-            if (await fs.pathExists(newThumbnailPath)) {
-              console.log(`📸 Thumbnail already exists for ${video.filename}, updating metadata...`);
-              // Update video metadata to use existing thumbnail
-              const videoIndex = videos.findIndex(v => v.id === video.id);
-              if (videoIndex !== -1) {
-                videos[videoIndex].thumbnail = thumbnailName;
-                videos[videoIndex].thumbnailUrl = `/uploads/thumbnails/${thumbnailName}`;
-              }
-              processed++;
-              generated++;
               continue;
             }
             
@@ -338,11 +492,10 @@ const generateThumbnails = async () => {
                   })
                   .on('end', () => {
                     console.log(`✅ Generated thumbnail for ${video.filename}`);
-                    // Update video metadata
-                    const videoIndex = videos.findIndex(v => v.id === video.id);
+                    // Update video metadata with new thumbnail
+                    const videoIndex = videos.findIndex(v => v._id === video._id);
                     if (videoIndex !== -1) {
-                      videos[videoIndex].thumbnail = thumbnailName;
-                      videos[videoIndex].thumbnailUrl = `/uploads/thumbnails/${thumbnailName}`;
+                      videos[videoIndex].thumbnailPath = `thumbnails/${thumbnailName}`;
                     }
                     generated++;
                     resolve();
@@ -377,83 +530,9 @@ const generateThumbnails = async () => {
   }
 };
 
-// Generate thumbnail for a video
-const generateThumbnail = (videoPath, thumbnailPath) => {
-  return new Promise((resolve, reject) => {
-    ffmpeg(videoPath)
-      .screenshots({
-        timestamps: ['10%'],
-        filename: path.basename(thumbnailPath),
-        folder: path.dirname(thumbnailPath),
-        size: '320x180'
-      })
-      .on('end', resolve)
-      .on('error', reject);
-  });
-};
-
-// Convert video to browser-compatible format
-const convertVideoToBrowserCompatible = (inputPath, outputPath) => {
-  return new Promise((resolve, reject) => {
-    console.log(`Converting video: ${inputPath} -> ${outputPath}`);
-    
-    ffmpeg(inputPath)
-      .videoCodec('libx264')
-      .audioCodec('aac')
-      .format('mp4')
-      .outputOptions([
-        '-preset fast',
-        '-crf 23',
-        '-movflags +faststart'
-      ])
-      .on('start', (commandLine) => {
-        console.log('FFmpeg command:', commandLine);
-      })
-      .on('progress', (progress) => {
-        console.log(`Conversion progress: ${Math.round(progress.percent)}%`);
-      })
-      .on('end', () => {
-        console.log(`Video conversion completed: ${outputPath}`);
-        resolve();
-      })
-      .on('error', (err) => {
-        console.error('Video conversion error:', err);
-        reject(err);
-      })
-      .save(outputPath);
-  });
-};
-
-// Check if video needs conversion for browser compatibility
-const needsConversion = async (videoPath) => {
-  return new Promise((resolve) => {
-    ffmpeg.ffprobe(videoPath, (err, metadata) => {
-      if (err) {
-        console.error('Error probing video:', err);
-        resolve(false);
-        return;
-      }
-      
-      const videoStream = metadata.streams.find(stream => stream.codec_type === 'video');
-      const audioStream = metadata.streams.find(stream => stream.codec_type === 'audio');
-      
-      // Check for problematic codecs
-      const problemCodecs = [
-        'xvid', 'divx', 'wmv3', 'vc1', 'theora', 'vp6f'
-      ];
-      const problemAudioCodecs = [
-        'ac3', 'dts', 'pcm_s16le', 'mp2'
-      ];
-      
-      const needsVideoConversion = videoStream && problemCodecs.includes(videoStream.codec_name?.toLowerCase());
-      const needsAudioConversion = audioStream && problemAudioCodecs.includes(audioStream.codec_name?.toLowerCase());
-      
-      console.log(`Video codec: ${videoStream?.codec_name}, Audio codec: ${audioStream?.codec_name}`);
-      console.log(`Needs conversion: ${needsVideoConversion || needsAudioConversion}`);
-      
-      resolve(needsVideoConversion || needsAudioConversion);
-    });
-  });
+// Convert subtitle to WebVTT format
+const convertSubtitleToVtt = async (subtitlePath) => {
+  // ...existing implementation...
 };
 
 // Routes
@@ -859,91 +938,6 @@ app.post('/api/videos/:id/convert', authenticateToken, requireAdmin, async (req,
     res.status(500).json({ error: 'Conversion request failed' });
   }
 });
-
-// Function to convert videos that need browser compatibility (background processing)
-const convertVideosInBackground = async () => {
-  try {
-    console.log('🔄 Checking videos for browser compatibility...');
-    
-    // Process videos in the background without blocking
-    setImmediate(async () => {
-      let processed = 0;
-      let converted = 0;
-      
-      for (const video of videos) {
-        try {
-          const videoPath = path.join(VIDEOS_DIR, video.originalFile || video.filename);
-          
-          // Check if video file exists
-          if (!(await fs.pathExists(videoPath))) {
-            console.log(`⚠️ Video file not found: ${video.filename}`);
-            processed++;
-            continue;
-          }
-          
-          // Check if video needs conversion
-          const needsConversion = await needsConversion(videoPath);
-          
-          if (needsConversion && !video.originalFile) {
-            const convertedFileName = path.parse(video.filename).name + '_converted.mp4';
-            const convertedPath = path.join(VIDEOS_DIR, convertedFileName);
-            
-            // Skip if already converted
-            if (await fs.pathExists(convertedPath)) {
-              console.log(`📹 Converted version already exists for ${video.filename}, updating metadata...`);
-              // Update video metadata
-              const videoIndex = videos.findIndex(v => v.id === video.id);
-              if (videoIndex !== -1) {
-                videos[videoIndex].filename = convertedFileName;
-                videos[videoIndex].videoUrl = `/uploads/${convertedFileName}`;
-                videos[videoIndex].originalFile = video.filename;
-              }
-              processed++;
-              converted++;
-              continue;
-            }
-            
-            try {
-              console.log(`🔄 [${processed + 1}/${videos.length}] Converting ${video.filename} for browser compatibility...`);
-              await convertVideoToBrowserCompatible(videoPath, convertedPath);
-              
-              // Update video metadata
-              const videoIndex = videos.findIndex(v => v.id === video.id);
-              if (videoIndex !== -1) {
-                videos[videoIndex].filename = convertedFileName;
-                videos[videoIndex].videoUrl = `/uploads/${convertedFileName}`;
-                videos[videoIndex].originalFile = video.filename;
-              }
-              
-              console.log(`✅ Successfully converted ${video.filename} to ${convertedFileName}`);
-              converted++;
-            } catch (error) {
-              console.error(`❌ Failed to convert ${video.filename}:`, error.message);
-            }
-          }
-          
-          processed++;
-          
-          // Add a small delay between operations to prevent system overload
-          await new Promise(resolve => setTimeout(resolve, 200));
-          
-        } catch (error) {
-          console.error(`❌ Error processing video ${video.filename}:`, error);
-          processed++;
-        }
-      }
-      
-      if (converted > 0) {
-        console.log(`🎬 Background video conversion complete. Converted ${converted} videos for browser compatibility.`);
-      } else {
-        console.log(`📹 All videos are already browser compatible.`);
-      }
-    });
-    
-  } catch (error) {
-    console.error('Error in convertVideosInBackground:', error);
-  }
-};
 
 // Initialize server
 const initializeServer = async () => {
