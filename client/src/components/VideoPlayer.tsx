@@ -1,18 +1,33 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { Video, SubtitleTrack } from '../types';
-import { fetchVideo, fetchSubtitles, fetchSubtitleContent } from '../services/videoService';
-import { getVideoUrl } from '../utils/urlUtils';
+import { fetchVideo, fetchVideos, fetchSubtitles, fetchSubtitleContent } from '../services/videoService';
+import { getVideoUrl, getThumbnailUrl } from '../utils/urlUtils';
 import './VideoPlayer.css';
 
 const VideoPlayer: React.FC = () => {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const [video, setVideo] = useState<Video | null>(null);
+  const [allVideos, setAllVideos] = useState<Video[]>([]);
   const [subtitles, setSubtitles] = useState<SubtitleTrack[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const [subtitleStyles, setSubtitleStyles] = useState<string>('');
+
+  // Load all videos for the side list
+  useEffect(() => {
+    const loadAllVideos = async () => {
+      try {
+        const videos = await fetchVideos();
+        setAllVideos(videos);
+      } catch (err) {
+        console.error('Error loading videos:', err);
+      }
+    };
+    loadAllVideos();
+  }, []);
 
   useEffect(() => {
     const loadVideo = async () => {
@@ -55,6 +70,23 @@ const VideoPlayer: React.FC = () => {
     loadVideo();
   }, [id]);
 
+  // Handle video end and autoplay next
+  const handleVideoEnd = () => {
+    if (video && allVideos.length > 0) {
+      const currentIndex = allVideos.findIndex(v => v._id === video._id);
+      const nextIndex = (currentIndex + 1) % allVideos.length;
+      const nextVideo = allVideos[nextIndex];
+      navigate(`/video/${nextVideo._id}`);
+    }
+  };
+
+  // Set up autoplay when video component mounts or changes
+  useEffect(() => {
+    if (videoRef.current) {
+      videoRef.current.autoplay = true;
+    }
+  }, [video]);
+
   if (loading) {
     return <div className="loading">Loading video...</div>;
   }
@@ -66,6 +98,9 @@ const VideoPlayer: React.FC = () => {
   if (!video) {
     return <div className="error">Video not found</div>;
   }
+
+  // Filter out the current video from side list
+  const sideVideos = allVideos.filter(v => v._id !== video._id);
 
   return (
     <div className="container">
@@ -81,8 +116,9 @@ const VideoPlayer: React.FC = () => {
             controls 
             className="video-element"
             src={getVideoUrl(video.filename)}
-            poster={video.thumbnailPath ? `/uploads/thumbnails/${video.thumbnailPath}` : undefined}
+            poster={video.thumbnailPath ? getThumbnailUrl(video.thumbnailPath) : undefined}
             crossOrigin="anonymous"
+            onEnded={handleVideoEnd}
           >
             {subtitles.map((subtitle, index) => (
               <track
@@ -122,6 +158,29 @@ const VideoPlayer: React.FC = () => {
             )}
           </div>
         </div>
+      </div>
+
+      <div className="side-videos">
+        {sideVideos.map(video => (
+          <Link key={video._id} to={`/video/${video._id}`} className="side-video-card">
+            <div className="side-video-thumbnail">
+              <img 
+                src={getThumbnailUrl(video.thumbnailPath || 'thumbnails/default.svg')} 
+                alt={video.title}
+                onError={(e) => {
+                  e.currentTarget.style.display = 'none';
+                }}
+              />
+            </div>
+            <div className="side-video-info">
+              <h3 className="side-video-title">{video.title}</h3>
+              <div className="side-video-meta">
+                <div>{video.views} views</div>
+                <div>{new Date(video.uploadDate).toLocaleDateString()}</div>
+              </div>
+            </div>
+          </Link>
+        ))}
       </div>
     </div>
   );
