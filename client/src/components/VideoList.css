@@ -74,29 +74,35 @@
   padding: 12px 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px; /* Reduced gap between elements */
+  text-align: left;
+  align-items: flex-start;
+  width: 100%;
 }
 
 .video-title {
   margin: 0;
   color: #f1f1f1;
-  font-size: 1rem;
+  font-size: 0.8125rem; /* Even smaller font size to match YouTube exactly */
   font-weight: 500;
-  line-height: 1.4;
+  line-height: 1.2; /* Tighter line height */
   display: -webkit-box;
   -webkit-line-clamp: 2;
   line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
   text-overflow: ellipsis;
+  text-align: left;
+  width: 100%;
 }
 
 .video-meta {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  flex-direction: row; /* Change to row layout */
+  flex-wrap: wrap;
+  gap: 4px 8px; /* 4px vertical gap, 8px horizontal gap */
   color: #aaa;
-  font-size: 0.85rem;
+  font-size: 0.75rem; /* Smaller meta text */
 }
 
 .video-meta > div {
